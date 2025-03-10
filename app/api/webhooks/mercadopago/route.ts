@@ -25,6 +25,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
+    console.log('ola')
     // Validação básica
     if (!body || !body.type || body.type !== 'payment' || !body.data?.id) {
       console.warn('Webhook ignorado: formato inválido ou evento não relacionado a pagamento.');
@@ -34,11 +35,13 @@ export async function POST(request: Request) {
     // Responder rapidamente para evitar falhas no Mercado Pago
     NextResponse.json({ status: 'received' });
 
+    console.log(body.data)
     // Processamento assíncrono para não bloquear a resposta
     setTimeout(async () => {
       try {
         const paymentData = await payment.get({ id: body.data.id });
 
+        
         if (!paymentData || !paymentData.status || !paymentData.metadata?.project_id) {
           console.error('Erro ao buscar pagamento: dados incompletos.');
           return;
