@@ -79,17 +79,14 @@ export default function ProjectDetailsPage() {
   const [editStatus, setEditStatus] = useState(false)
   const [newStatus, setNewStatus] = useState("")
   const supabase = createClient()
-  const [commentList, setCommentList] = useState(comments);
   const [userCanComment, setUserCanComment] = useState(false)
 
   useEffect(() => {
-    setCommentList(comments);
-    
     const fetchData = async () => {
       if (!params.id) return
 
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) return
 
       // Obtém informações do perfil do usuário logado
       const { data: profileData } = await supabase
@@ -100,42 +97,103 @@ export default function ProjectDetailsPage() {
 
       setIsAdmin(profileData?.is_admin || false)
 
-      // Obtém detalhes do projeto
-      const { data: projectData  } = await supabase
-      .from("projects")
-      .select(`
-        id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations,
-        profiles:profiles(id, full_name)
-      `)
-      .eq("id", params.id)
-      .single();
-    
-      if (projectData) {
-        setProject(projectData)
+      // Busca o projeto sem a relação com profiles
+      const { data: projectData, error: projectError } = await supabase
+        .from("projects")
+        .select("id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations")
+        .eq("id", params.id)
+        .single()
 
-        // Verifica se o usuário tem permissão para comentar
-        setUserCanComment(profileData?.is_admin || projectData.user_id === user.id)
+      if (projectError || !projectData) {
+        console.error("Erro ao buscar projeto:", projectError);
+        return;
       }
 
-      // Obtém comentários do projeto
-      const { data: commentsData, error } = await supabase
+      // Busca o perfil do usuário do projeto
+      const { data: profileDataProject, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("id", projectData.user_id)
+        .single()
+
+      // Adiciona o perfil ao projeto manualmente
+      projectData.profiles = profileError ? null : profileDataProject
+
+      // Define o estado do projeto
+      setProject(projectData)
+
+      // Verifica se o usuário tem permissão para comentar
+      setUserCanComment(profileData?.is_admin || projectData.user_id === user.id)
+
+      // Busca os comentários do projeto sem a relação com profiles
+      const { data: commentsData, error: commentsError } = await supabase
         .from("project_comments")
-        .select(`
-          id, project_id, profile_id, content, created_at,
-          profiles:profiles(id, full_name)
-        `)
+        .select("id, project_id, profile_id, content, created_at")
         .eq("project_id", params.id)
         .order("created_at", { ascending: false })
 
-      if (error) {
-        console.error("Erro ao buscar comentários:", error)
-      } else {
-        setComments(commentsData || [])
+      if (commentsError) {
+        console.error("Erro ao buscar comentários:", commentsError)
+        return
       }
+
+      // Busca todos os perfis dos usuários que comentaram
+      const profileIds = commentsData.map(comment => comment.profile_id)
+      const { data: profilesData, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", profileIds)
+
+      if (profilesError) {
+        console.error("Erro ao buscar perfis:", profilesError)
+        return
+      }
+
+      // Cria um mapa de perfis para facilitar a atribuição aos comentários
+      const profilesMap = profilesData ? Object.fromEntries(profilesData.map(p => [p.id, p])) : {}
+
+      // Adiciona os perfis aos comentários
+      const enrichedComments = commentsData.map(comment => ({
+        ...comment,
+        profiles: profilesMap[comment.profile_id] || null
+      }))
+
+      setComments(enrichedComments)
     }
 
     fetchData()
-  }, [params.id, supabase, comments])
+  }, [params.id])
+
+  const addComment = async () => {
+    if (!newComment.trim() || !project) return
+
+    setIsLoading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: comment, error } = await supabase
+        .from("project_comments")
+        .insert({
+          project_id: project.id,
+          profile_id: user.id,
+          content: newComment.trim()
+        })
+        .select("*, profiles(id, full_name)")
+        .single()
+
+      if (error) throw error
+
+      setComments([comment, ...comments])
+      setNewComment("")
+    } catch (error) {
+      console.error("Erro ao adicionar comentário:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  if (!project) return null
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -162,38 +220,6 @@ export default function ProjectDetailsPage() {
         return "bg-yellow-100 text-yellow-800"
     }
   }
-
-  const addComment = async () => {
-    if (!newComment.trim() || !project) return
-
-    setIsLoading(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: comment, error } = await supabase
-        .from("project_comments")
-        .insert({
-          project_id: project.id,
-          profile_id: user.id,
-          content: newComment.trim()
-        })
-        .select("*, profiles!fk_profile(full_name)")
-        .single()
-
-      if (error) throw error
-
-      setComments([comment, ...comments])
-      setNewComment("")
-    } catch (error) {
-      console.error("Erro ao adicionar comentário:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  if (!project) return null
-
 
   const updateProjectStatus = async () => {
     if (!project || !newStatus) return
@@ -427,42 +453,35 @@ export default function ProjectDetailsPage() {
             <TabsContent value="comments">
               <div className="space-y-6">
               {userCanComment && (
-                <div className="flex gap-4">
-                  <textarea
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    placeholder="Adicione um comentário..."
-                    className="flex-1 min-h-[100px] p-3 rounded-md border"
-                  />
-                  <Button
-                    onClick={addComment}
-                    disabled={isLoading || !newComment.trim()}
-                  >
-                    {isLoading ? "Enviando..." : "Comentar"}
-                  </Button>
-                </div>
-              )}
+                  <div className="flex gap-4">
+                    <textarea
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Adicione um comentário..."
+                      className="flex-1 min-h-[100px] p-3 rounded-md border"
+                    />
+                    <Button onClick={addComment} disabled={isLoading || !newComment.trim()}>
+                      {isLoading ? "Enviando..." : "Comentar"}
+                    </Button>
+                  </div>
+                )}
 
-                <div className="space-y-4">
-                  {commentList.map((comment) => (
-                    <Card key={comment.id} className="p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <User className="w-5 h-5 text-muted-foreground" />
-                        <span className="font-medium">
-                          {comment.profiles?.full_name 
-                            ? comment.profiles.full_name 
-                            : comment.profiles === undefined 
-                              ? "Carregando..." 
-                              : "Usuário desconhecido"}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {format(new Date(comment.created_at), "dd/MM/yyyy HH:mm")}
-                        </span>
-                      </div>
-                      <p>{comment.content}</p>
-                    </Card>
-                  ))}
-                </div>
+                <div className="space-y-4 mt-4">
+                        {comments.map((comment) => (
+                          <Card key={comment.id} className="p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <User className="w-5 h-5 text-muted-foreground" />
+                              <span className="font-medium">
+                                {comment.profiles?.full_name || "Usuário desconhecido"}
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {format(new Date(comment.created_at), "dd/MM/yyyy HH:mm")}
+                              </span>
+                            </div>
+                            <p>{comment.content}</p>
+                          </Card>
+                        ))}
+                  </div>
               </div>
             </TabsContent>
           </Tabs>
