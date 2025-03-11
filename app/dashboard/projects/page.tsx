@@ -57,31 +57,29 @@ export default function ProjectsPage() {
       setIsAdmin(profileData?.is_admin || false)
 
       // Fetch projects with user details
-      let query = supabase
+      const { data: projectData, error: projectError } = await supabase
         .from("projects")
-        .select(`
-          *,
-          profiles!fk_user (
-            full_name,
-            document,
-            account_type,
-            company_name,
-            phone
-          )
-        `);
+        .select("id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations")
 
-      
-      if (!profileData?.is_admin) {
-        query = query.eq("user_id", user.id);
+      if (projectError || !projectData) {
+        console.error("Erro ao buscar projeto:", projectError);
+        return;
       }
 
-      const { data: projectsData } = await query.order("created_at", { ascending: false })
+      // Busca o perfil do usuário do projeto
+      const { data: profileDataProject, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("id", projectData.user_id)
+        .limit(1)
+        .single()
 
-      if (projectsData) {
-        setProjects(projectsData)
+      // Adiciona o perfil ao projeto manualmente
+      projectData.profiles = profileError ? null : profileDataProject
+
+      if (projectData) {
+        setProjects(projectData);
       }
-    }
-
     fetchData()
   }, [supabase])
 
@@ -221,7 +219,7 @@ export default function ProjectsPage() {
                   {isAdmin && (
                     <td className="py-3 px-4">
                       <div>
-                        <div className="font-medium">{project.user?.full_name}</div>
+                        <div className="font-medium">{project.profiles?.full_name}</div>
                         <div className="text-sm text-muted-foreground">{project.user?.email}</div>
                       </div>
                     </td>

@@ -114,6 +114,7 @@ export default function ProjectDetailsPage() {
         .from("profiles")
         .select("id, full_name")
         .eq("id", projectData.user_id)
+        .limit(1)
         .single()
 
       // Adiciona o perfil ao projeto manualmente
