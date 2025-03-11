@@ -101,7 +101,7 @@ export default function ProjectDetailsPage() {
       setIsAdmin(profileData?.is_admin || false)
 
       // Obtém detalhes do projeto
-      const { data: projectData } = await supabase
+      const { data: projectData  } = await supabase
       .from("projects")
       .select(`
         id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations,
@@ -122,7 +122,7 @@ export default function ProjectDetailsPage() {
         .from("project_comments")
         .select(`
           id, project_id, profile_id, content, created_at,
-          profiles!fk_profile(id, full_name)
+          profiles:profiles(id, full_name)
         `)
         .eq("project_id", params.id)
         .order("created_at", { ascending: false })
