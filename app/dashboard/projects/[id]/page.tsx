@@ -101,16 +101,22 @@ export default function ProjectDetailsPage() {
       setIsAdmin(profileData?.is_admin || false)
 
       // Obtém detalhes do projeto
-      const { data: projectData } = await supabase
-        .from("projects")
-        .select(`
-          id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations,
-          profiles:user_id (id, full_name)
-        `)
-        .eq("id", params.id)
-        .single();
-    
+      const baseFields = `
+        id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations
+      `;
 
+      // Se NÃO for admin, inclui o relacionamento com o perfil
+      const selectFields = isAdmin ? baseFields : `${baseFields}, profiles:user_id (id, full_name)`;
+
+      // Monta a query
+      let query = supabase.from("projects").select(selectFields);
+
+      if (!isAdmin) {
+        query = query.eq("user_id", user.id); // Se não for admin, filtra pelo usuário logado
+      }
+
+      const { data: projectData } = await query;
+      
       if (projectData) {
         setProject(projectData)
 
