@@ -200,7 +200,7 @@ export default function ProjectDetailsPage() {
         })
         .select(`
           *,
-          user:profiles(full_name)
+          profiles!fk_profile(full_name)
         `)
         .single()
 
