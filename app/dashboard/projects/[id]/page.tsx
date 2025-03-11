@@ -105,11 +105,11 @@ export default function ProjectDetailsPage() {
       .from("projects")
       .select(`
         id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations,
-        profiles:profiles!id(user_id, full_name)
+        profiles:profiles(id, full_name)
       `)
       .eq("id", params.id)
       .single();
-
+    
       if (projectData) {
         setProject(projectData)
 
