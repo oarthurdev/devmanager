@@ -103,7 +103,7 @@ export default function ProjectDetailsPage() {
       // Obtém detalhes do projeto
       const { data: projectData } = await supabase
         .from("projects")
-        .select("id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations")
+        .select("id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations, profiles!fk_profile(id, full_name)")
         .eq("id", params.id)
         .single()
 
