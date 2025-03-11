@@ -80,8 +80,9 @@ export default function ProjectsPage() {
       if (projectData) {
         setProjects(projectData);
       }
+    }
     fetchData()
-  }, [supabase])
+  }, [supabase]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
