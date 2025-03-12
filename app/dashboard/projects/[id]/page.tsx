@@ -229,7 +229,6 @@ export default function ProjectDetailsPage() {
   const addComment = async () => {
     if (!newComment.trim() || !project) return
 
-    setIsLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
