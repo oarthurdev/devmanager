@@ -543,16 +543,13 @@ export default function ProjectDetailsPage() {
                   {comments.map((comment) => (
                     <Card key={comment.id} className="p-4">
                       <div className="flex items-center gap-2 mb-2">
-                        {comment.profiles?.is_admin ? (
+                        {comment.type == "admin" ? (
                           <Shield className="w-5 h-5 text-primary" />
                         ) : (
                           <User className="w-5 h-5 text-muted-foreground" />
                         )}
                         <span className="font-medium">
-                          {comment.profiles?.full_name || "Usuário"}
-                          {comment.profiles?.is_admin && (
-                            <span className="ml-2 text-sm text-primary">(Admin)</span>
-                          )}
+                          {comment.profiles?.full_name || "Administrador"}
                         </span>
                         <span className="text-sm text-muted-foreground">
                           {format(new Date(comment.created_at), "dd/MM/yyyy HH:mm")}
