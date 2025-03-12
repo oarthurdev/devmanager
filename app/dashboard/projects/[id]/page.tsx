@@ -23,7 +23,8 @@ import {
   Trash2,
   CreditCard,
   Loader2,
-  Shield
+  Shield,
+  Info
 } from "lucide-react"
 
 interface Project {
@@ -64,10 +65,10 @@ interface Comment {
   project_id: string
   content: string
   created_at: string
-  type?: string
+  type: "user" | "admin" | "system"
   profiles: {
     full_name: string
-    is_admin?: boolean
+    is_admin: boolean
   }
 }
 
@@ -127,31 +128,10 @@ export default function ProjectDetailsPage() {
           .eq("id", params.id)
           .single()
 
-          if (projectError) {
-            setError("Project not found")
-            return
-          }
-          
-          // Fetch the profile of the project owner using the user_id
-          const { data: ownerProfile, error: ownerProfileError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", projectData.user_id)
-          .single();
-        
-          if (ownerProfileError) {
-              setError("Owner profile not found or there is an issue with the query")
-              return
-          } else if (ownerProfile.length === 0) {
-              setError("No profile found for the given user ID.");
-              return
-          } else {
-              // Process the profiles as needed
-              console.log("Owner Profiles:", ownerProfile);
-          }
-          
-          // Add the owner's profile to the projectData
-          projectData.profiles = ownerProfile;
+        if (projectError) {
+          setError("Project not found")
+          return
+        }
 
         // Check if user has access to this project
         if (!profileData?.is_admin && projectData.user_id !== user.id) {
@@ -228,9 +208,28 @@ export default function ProjectDetailsPage() {
     }
   }
 
+  const getCommentIcon = (type: string) => {
+    switch (type) {
+      case "admin":
+        return <Shield className="w-5 h-5 text-primary" />
+      case "system":
+        return <Info className="w-5 h-5 text-blue-500" />
+      default:
+        return <User className="w-5 h-5 text-muted-foreground" />
+    }
+  }
+
+  const getCommentAuthor = (comment: Comment) => {
+    if (comment.type === "system") {
+      return "Sistema"
+    }
+    return comment.profiles?.full_name || (comment.type === "admin" ? "Administrador" : "Usuário")
+  }
+
   const addComment = async () => {
     if (!newComment.trim() || !project) return
 
+    setIsLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -543,19 +542,20 @@ export default function ProjectDetailsPage() {
                   {comments.map((comment) => (
                     <Card key={comment.id} className="p-4">
                       <div className="flex items-center gap-2 mb-2">
-                        {comment.type == "admin" ? (
-                          <Shield className="w-5 h-5 text-primary" />
-                        ) : (
-                          <User className="w-5 h-5 text-muted-foreground" />
-                        )}
+                        {getCommentIcon(comment.type)}
                         <span className="font-medium">
-                          {comment.profiles?.full_name || "Administrador"}
+                          {getCommentAuthor(comment)}
+                          {comment.type === "admin" && (
+                            <span className="ml-2 text-sm text-primary">(Admin)</span>
+                          )}
                         </span>
                         <span className="text-sm text-muted-foreground">
                           {format(new Date(comment.created_at), "dd/MM/yyyy HH:mm")}
                         </span>
                       </div>
-                      <p>{comment.content}</p>
+                      <p className={comment.type === "system" ? "text-sm text-muted-foreground italic" : ""}>
+                        {comment.content}
+                      </p>
                     </Card>
                   ))}
                 </div>
