@@ -21,7 +21,9 @@ import {
   MessageSquare,
   Edit,
   Trash2,
-  CreditCard
+  CreditCard,
+  Loader2,
+  Shield
 } from "lucide-react"
 
 interface Project {
@@ -38,9 +40,11 @@ interface Project {
   customizations: Record<string, any>
   payment_status: string
   payment_details: any
-  user: {
+  profiles: {
     full_name: string
-    email: string
+    phone: string
+    document: string
+    company_name?: string
   }
 }
 
@@ -58,11 +62,12 @@ interface Task {
 interface Comment {
   id: string
   project_id: string
-  user_id: string
   content: string
   created_at: string
-  user: {
+  type?: string
+  profiles: {
     full_name: string
+    is_admin?: boolean
   }
 }
 
@@ -74,127 +79,128 @@ export default function ProjectDetailsPage() {
   const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState("")
   const [isAdmin, setIsAdmin] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [editStatus, setEditStatus] = useState(false)
   const [newStatus, setNewStatus] = useState("")
   const supabase = createClient()
-  const [userCanComment, setUserCanComment] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!params.id) return
+      try {
+        if (!params.id) {
+          setError("Project ID not found")
+          return
+        }
 
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError || !user) return
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          router.push("/auth/login")
+          return
+        }
 
-      // Obtém informações do perfil do usuário logado
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("id, is_admin")
-        .eq("id", user.id)
-        .single()
+        setCurrentUserId(user.id)
 
-      setIsAdmin(profileData?.is_admin || false)
+        // Check if user is admin
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("id", user.id)
+          .single()
 
-      // Busca o projeto sem a relação com profiles
-      const { data: projectData, error: projectError } = await supabase
-        .from("projects")
-        .select("id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations")
-        .eq("id", params.id)
-        .single()
+        setIsAdmin(profileData?.is_admin || false)
 
-      if (projectError || !projectData) {
-        console.error("Erro ao buscar projeto:", projectError);
-        return;
+        // Fetch project details with user info
+        const { data: projectData, error: projectError } = await supabase
+          .from("projects")
+          .select(`
+            *,
+            profiles (
+              full_name,
+              phone,
+              document,
+              company_name
+            )
+          `)
+          .eq("id", params.id)
+          .single()
+
+          if (projectError) {
+            setError("Project not found")
+            return
+          }
+          
+          // Fetch the profile of the project owner using the user_id
+          const { data: ownerProfile, error: ownerProfileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", projectData.user_id)
+          .single();
+        
+          if (ownerProfileError) {
+              setError("Owner profile not found or there is an issue with the query")
+              return
+          } else if (ownerProfile.length === 0) {
+              setError("No profile found for the given user ID.");
+              return
+          } else {
+              // Process the profiles as needed
+              console.log("Owner Profiles:", ownerProfile);
+          }
+          
+          // Add the owner's profile to the projectData
+          projectData.profiles = ownerProfile;
+
+        // Check if user has access to this project
+        if (!profileData?.is_admin && projectData.user_id !== user.id) {
+          setError("You don't have permission to view this project")
+          return
+        }
+
+        if (projectData) {
+          setProject(projectData)
+          setNewStatus(projectData.status)
+        }
+
+        // Fetch tasks
+        const { data: tasksData } = await supabase
+          .from("tasks")
+          .select("*")
+          .eq("project_id", params.id)
+          .order("created_at", { ascending: true })
+
+        if (tasksData) {
+          setTasks(tasksData)
+        }
+
+        // Fetch comments with admin status
+        const { data: commentsData } = await supabase
+          .from("project_comments")
+          .select(`
+            *,
+            profiles (
+              full_name,
+              is_admin
+            )
+          `)
+          .eq("project_id", params.id)
+          .order("created_at", { ascending: false })
+
+        if (commentsData) {
+          setComments(commentsData)
+        }
+      } catch (err) {
+        setError("Failed to load project data")
+        console.error("Error fetching project data:", err)
+      } finally {
+        setIsLoading(false)
       }
-
-      // Busca o perfil do usuário do projeto
-      const { data: profileDataProject, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .eq("id", projectData.user_id)
-        .limit(1)
-        .single()
-
-      // Adiciona o perfil ao projeto manualmente
-      projectData.profiles = profileError ? null : profileDataProject
-
-      // Define o estado do projeto
-      setProject(projectData)
-
-      // Verifica se o usuário tem permissão para comentar
-      setUserCanComment(profileData?.is_admin || projectData.user_id === user.id)
-
-      // Busca os comentários do projeto sem a relação com profiles
-      const { data: commentsData, error: commentsError } = await supabase
-        .from("project_comments")
-        .select("id, project_id, profile_id, content, created_at")
-        .eq("project_id", params.id)
-        .order("created_at", { ascending: false })
-
-      if (commentsError) {
-        console.error("Erro ao buscar comentários:", commentsError)
-        return
-      }
-
-      // Busca todos os perfis dos usuários que comentaram
-      const profileIds = commentsData.map(comment => comment.profile_id)
-      const { data: profilesData, error: profilesError } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .in("id", profileIds)
-
-      if (profilesError) {
-        console.error("Erro ao buscar perfis:", profilesError)
-        return
-      }
-
-      // Cria um mapa de perfis para facilitar a atribuição aos comentários
-      const profilesMap = profilesData ? Object.fromEntries(profilesData.map(p => [p.id, p])) : {}
-
-      // Adiciona os perfis aos comentários
-      const enrichedComments = commentsData.map(comment => ({
-        ...comment,
-        profiles: profilesMap[comment.profile_id] || null
-      }))
-
-      setComments(enrichedComments)
     }
 
     fetchData()
-  }, [params.id])
-
-  const addComment = async () => {
-    if (!newComment.trim() || !project) return
-
-    setIsLoading(true)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: comment, error } = await supabase
-        .from("project_comments")
-        .insert({
-          project_id: project.id,
-          profile_id: user.id,
-          content: newComment.trim()
-        })
-        .select("*, profiles(id, full_name)")
-        .single()
-
-      if (error) throw error
-
-      setComments([comment, ...comments])
-      setNewComment("")
-    } catch (error) {
-      console.error("Erro ao adicionar comentário:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  if (!project) return null
+  }, [params.id, router, supabase])
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -222,6 +228,41 @@ export default function ProjectDetailsPage() {
     }
   }
 
+  const addComment = async () => {
+    if (!newComment.trim() || !project) return
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: comment, error } = await supabase
+        .from("project_comments")
+        .insert({
+          project_id: project.id,
+          profile_id: user.id,
+          content: newComment.trim(),
+          type: isAdmin ? "admin" : "user"
+        })
+        .select(`
+          *,
+          profiles (
+            full_name,
+            is_admin
+          )
+        `)
+        .single()
+
+      if (error) throw error
+
+      setComments(prevComments => [comment, ...prevComments])
+      setNewComment("")
+    } catch (error) {
+      console.error("Error adding comment:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const updateProjectStatus = async () => {
     if (!project || !newStatus) return
 
@@ -233,20 +274,23 @@ export default function ProjectDetailsPage() {
 
       if (error) throw error
 
-      setProject({ ...project, status: newStatus })
+      setProject(prevProject => prevProject ? { ...prevProject, status: newStatus } : null)
       setEditStatus(false)
 
       // Add system comment about status change
-      const { error: commentError } = await supabase
-        .from("project_comments")
-        .insert({
-          project_id: project.id,
-          profile_id: (await supabase.auth.getUser()).data.user?.id,
-          content: `Status do projeto alterado para: ${newStatus}`,
-          type: "system"
-        })
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { error: commentError } = await supabase
+          .from("project_comments")
+          .insert({
+            project_id: project.id,
+            profile_id: user.id,
+            content: `Status do projeto alterado para: ${newStatus}`,
+            type: "system"
+          })
 
-      if (commentError) throw commentError
+        if (commentError) throw commentError
+      }
     } catch (error) {
       console.error("Error updating project status:", error)
     }
@@ -269,7 +313,32 @@ export default function ProjectDetailsPage() {
     }
   }
 
-  if (!project) return null
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    )
+  }
+
+  if (error || !project) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <AlertCircle className="w-12 h-12 text-destructive mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Error</h2>
+        <p className="text-muted-foreground">{error || "Project not found"}</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => router.push("/dashboard/projects")}
+        >
+          Back to Projects
+        </Button>
+      </div>
+    )
+  }
+
+  const canEdit = isAdmin || project.user_id === currentUserId
 
   return (
     <div className="space-y-8">
@@ -302,7 +371,7 @@ export default function ProjectDetailsPage() {
                    project.status === "cancelled" ? "Cancelado" :
                    "Pendente"}
                 </span>
-                {isAdmin && (
+                {canEdit && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -423,7 +492,7 @@ export default function ProjectDetailsPage() {
 
             <TabsContent value="customizations">
               <div className="space-y-6">
-                {Object.entries(project.customizations).map(([product, details]) => (
+                {Object.entries(project.customizations || {}).map(([product, details]) => (
                   <div key={product}>
                     <h3 className="font-semibold mb-2 capitalize">{product}</h3>
                     <div className="space-y-4">
@@ -453,7 +522,7 @@ export default function ProjectDetailsPage() {
 
             <TabsContent value="comments">
               <div className="space-y-6">
-              {userCanComment && (
+                {(isAdmin || project.user_id === currentUserId) && (
                   <div className="flex gap-4">
                     <textarea
                       value={newComment}
@@ -461,33 +530,42 @@ export default function ProjectDetailsPage() {
                       placeholder="Adicione um comentário..."
                       className="flex-1 min-h-[100px] p-3 rounded-md border"
                     />
-                    <Button onClick={addComment} disabled={isLoading || !newComment.trim()}>
+                    <Button
+                      onClick={addComment}
+                      disabled={isLoading || !newComment.trim()}
+                    >
                       {isLoading ? "Enviando..." : "Comentar"}
                     </Button>
                   </div>
                 )}
 
-                <div className="space-y-4 mt-4">
-                        {comments.map((comment) => (
-                          <Card key={comment.id} className="p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                              <User className="w-5 h-5 text-muted-foreground" />
-                              <span className="font-medium">
-                                {comment.profiles?.full_name || "Usuário desconhecido"}
-                              </span>
-                              <span className="text-sm text-muted-foreground">
-                                {format(new Date(comment.created_at), "dd/MM/yyyy HH:mm")}
-                              </span>
-                            </div>
-                            <p>{comment.content}</p>
-                          </Card>
-                        ))}
-                  </div>
+                <div className="space-y-4">
+                  {comments.map((comment) => (
+                    <Card key={comment.id} className="p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        {comment.profiles?.is_admin ? (
+                          <Shield className="w-5 h-5 text-primary" />
+                        ) : (
+                          <User className="w-5 h-5 text-muted-foreground" />
+                        )}
+                        <span className="font-medium">
+                          {comment.profiles?.full_name || "Usuário"}
+                          {comment.profiles?.is_admin && (
+                            <span className="ml-2 text-sm text-primary">(Admin)</span>
+                          )}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {format(new Date(comment.created_at), "dd/MM/yyyy HH:mm")}
+                        </span>
+                      </div>
+                      <p>{comment.content}</p>
+                    </Card>
+                  ))}
+                </div>
               </div>
             </TabsContent>
           </Tabs>
         </Card>
-        
 
         <div className="space-y-6">
           <Card className="p-6">
@@ -497,8 +575,7 @@ export default function ProjectDetailsPage() {
                 <User className="w-5 h-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm text-muted-foreground">Cliente</p>
-                  <p className="font-medium">{project.profiles.full_name}</p>
-                  <p className="text-sm text-muted-foreground">{project.profiles.email}</p>
+                  <p className="font-medium">{project.profiles?.full_name}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">

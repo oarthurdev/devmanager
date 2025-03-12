@@ -24,9 +24,12 @@ interface Project {
   payment_details: any
   created_at: string
   updated_at: string
-  user: {
-    full_name: string
-    email: string
+  user?: {
+    full_name: string,
+    company_name: string,
+    document: string,
+    account_type: string,
+    phone: string
   }
 }
 
@@ -44,46 +47,55 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          console.error("Erro ao buscar usuário:", userError);
+          return;
+        }
 
-      // Check if user is admin
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("is_admin")
-        .eq("id", user.id)
-        .single()
+        // Buscar se o usuário é admin
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("is_admin")
+          .eq("id", user.id)
+          .single();
 
-      setIsAdmin(profileData?.is_admin || false)
+        if (profileError) {
+          console.error("Erro ao buscar perfil do usuário:", profileError);
+          return;
+        }
 
-      // Fetch projects with user details
-      const { data: projectData, error: projectError } = await supabase
-        .from("projects")
-        .select("id, name, description, status, plan, user_id, products, deadline, created_at, requirements, customizations")
+        const isAdmin = profileData?.is_admin || false;
+        setIsAdmin(isAdmin);
 
-      if (projectError || !projectData) {
-        console.error("Erro ao buscar projeto:", projectError);
-        return;
+        // Construir a query de projetos
+        let query = supabase
+          .from("projects")
+          .select("id, name, description, status, plan, user_id, products, deadline, created_at, updated_at, payment_status, payment_details, profiles(full_name, company_name, document, account_type, phone)");
+
+        // Se não for admin, filtra os projetos apenas do usuário logado
+        if (!isAdmin) {
+          query = query.eq("user_id", user.id);
+        }
+
+        const { data: projectData, error: projectError } = await query;
+
+        if (projectError) {
+          console.error("Erro ao buscar projetos:", projectError);
+          return;
+        }
+
+        setProjects(projectData || []);
+      } catch (error) {
+        console.error("Erro inesperado ao buscar dados:", error);
       }
+    };
 
-      // Busca o perfil do usuário do projeto
-      const { data: profileDataProject, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .eq("id", projectData.user_id)
-        .limit(1)
-        .single()
-
-      // Adiciona o perfil ao projeto manualmente
-      projectData.profiles = profileError ? null : profileDataProject
-
-      if (projectData) {
-        setProjects(projectData);
-      }
-    }
-    fetchData()
+    fetchData();
   }, [supabase]);
 
+  
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "completed":
@@ -121,20 +133,7 @@ export default function ProjectsPage() {
       default:
         return "bg-gray-100 text-gray-800"
     }
-  }
-
-  const filteredProjects = projects
-    .filter(project => 
-      project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (isAdmin && project.user?.full_name.toLowerCase().includes(searchTerm.toLowerCase()))
-    )
-    .filter(project => 
-      statusFilter === "all" ? true : project.status === statusFilter
-    )
-    .filter(project =>
-      planFilter === "all" ? true : project.plan === planFilter
-    )
+  } 
 
   return (
     <div className="space-y-8">
@@ -209,7 +208,7 @@ export default function ProjectsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredProjects.map((project) => (
+              {projects.map((project) => (
                 <tr key={project.id} className="border-b">
                   <td className="py-3 px-4">
                     <div>
@@ -220,8 +219,7 @@ export default function ProjectsPage() {
                   {isAdmin && (
                     <td className="py-3 px-4">
                       <div>
-                        <div className="font-medium">{project.profiles?.full_name}</div>
-                        <div className="text-sm text-muted-foreground">{project.user?.email}</div>
+                        <div className="font-medium">{project.user?.full_name}</div>
                       </div>
                     </td>
                   )}
