@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
 import { format } from "date-fns"
+import Dropzone, { FileWithPath } from "react-dropzone"
 import {
   Clock,
   Calendar,
@@ -24,7 +25,10 @@ import {
   CreditCard,
   Loader2,
   Shield,
-  Info
+  Info,
+  Upload,
+  FileText,
+  X
 } from "lucide-react"
 import { createNotification } from "@/lib/notifications"
 
@@ -88,6 +92,12 @@ export default function ProjectDetailsPage() {
   const [editStatus, setEditStatus] = useState(false)
   const [newStatus, setNewStatus] = useState("")
   const supabase = createClient()
+  const [attachments, setAttachments] = useState([])
+  const [uploading, setUploading] = useState(false)
+  const [token, setToken] = useState("")
+  const [signedUrl, setSignedUrl] = useState("")
+  const [carouselIndex, setCarouselIndex] = useState(0)
+  const [showCarousel, setShowCarousel] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -181,7 +191,39 @@ export default function ProjectDetailsPage() {
     }
 
     fetchData()
+    fetchAttachments()
   }, [params.id, router, supabase])
+
+  const fetchAttachments = async () => {
+    const { data, error } = await supabase.storage.from("attachments").list(`${params.id}`)
+    if (!error) setAttachments(data || [])
+  }
+
+  const handleUpload = async (files: FileWithPath[]) => {
+    if (!files.length) return;
+    setUploading(true);
+
+    for (const file of files) {
+      const uniqueFileName = `${Date.now()}-${file.name}`
+      const filePath = `${params.id}/${uniqueFileName}`
+
+      const { error: uploadError } = await supabase.storage.from("attachments").upload(filePath, file)
+      if (uploadError) {
+        console.error("Upload error:", uploadError)
+        continue
+      }
+
+      const { data: signedUrlData } = await supabase.storage.from("attachments").createSignedUrl(filePath, 3600)
+      setAttachments((prev) => [...prev, { name: uniqueFileName, path: filePath, url: signedUrlData?.signedUrl }])
+    }
+
+    setUploading(false)
+  }
+
+  const deleteFile = async (filePath) => {
+    await supabase.storage.from("attachments").remove([filePath])
+    setAttachments((prev) => prev.filter((file) => file.path !== filePath))
+  }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -504,6 +546,7 @@ export default function ProjectDetailsPage() {
               <TabsTrigger value="requirements">Requisitos</TabsTrigger>
               <TabsTrigger value="customizations">Personalizações</TabsTrigger>
               <TabsTrigger value="comments">Comentários</TabsTrigger>
+              <TabsTrigger value="attachments">Anexos</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
@@ -642,6 +685,61 @@ export default function ProjectDetailsPage() {
                     </Card>
                   ))}
                 </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="attachments">
+              <div className="space-y-4">
+                <Dropzone onDrop={handleUpload} accept={{ "image/*": [".png", ".jpg", ".jpeg"], "application/pdf": [".pdf"] }}>
+                  {({ getRootProps, getInputProps }) => (
+                    <div {...getRootProps()} className="border-dashed border-2 p-6 rounded-lg cursor-pointer text-center">
+                      <input {...getInputProps()} />
+                      <Upload className="w-6 h-6 mx-auto text-gray-500" />
+                      <p className="text-gray-600 mt-2">Arraste um arquivo ou clique para selecionar</p>
+                    </div>
+                  )}
+                </Dropzone>
+                {uploading && <p>Enviando...</p>}
+                <div className="grid grid-cols-3 gap-4 mt-4">
+                  {attachments.map((file, index) => (
+                    <div key={file.path} className="relative group border rounded-md p-2">
+                      {file.name.endsWith(".pdf") ? (
+                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+                          <FileText className="w-4 h-4" /> {file.name}
+                        </a>
+                      ) : file.name.match(/.(jpg|jpeg|png)$/) ? (
+                        <img
+                          src={file.url}
+                          alt={file.name}
+                          className="w-full h-32 object-cover rounded cursor-pointer"
+                          onClick={() => {
+                            setCarouselIndex(index)
+                            setShowCarousel(true)
+                          }}
+                        />
+                      ) : (
+                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600">
+                          <FileText className="w-4 h-4" /> {file.name}
+                        </a>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute top-1 right-1 text-red-500 opacity-0 group-hover:opacity-100"
+                        onClick={() => deleteFile(file.path)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                {showCarousel && (
+                  <Dialog open={showCarousel} onOpenChange={setShowCarousel}>
+                    <DialogContent>
+                      <img src={attachments[carouselIndex]?.url} alt="Imagem" className="w-full" />
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             </TabsContent>
           </Tabs>
