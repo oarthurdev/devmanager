@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
 import { format } from "date-fns"
@@ -31,6 +31,7 @@ import {
   X
 } from "lucide-react"
 import { createNotification } from "@/lib/notifications"
+import { VisuallyHidden } from "@reach/visually-hidden"
 
 interface Project {
   id: string
@@ -810,6 +811,10 @@ export default function ProjectDetailsPage() {
                 {showCarousel && (
                   <Dialog open={showCarousel} onOpenChange={setShowCarousel}>
                     <DialogContent>
+                    <DialogDescription>Imagem</DialogDescription>
+                    <VisuallyHidden>
+                      < DialogTitle>Visualizar Imagem</DialogTitle>
+                    </VisuallyHidden>
                       <img src={attachments[carouselIndex]?.url} alt="Imagem" className="w-full" />
                     </DialogContent>
                   </Dialog>

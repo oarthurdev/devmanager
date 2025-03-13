@@ -45,7 +45,7 @@ export async function POST(request: Request) {
           number: formData.cpf || '09932960926' // Substituindo pelo CPF real se disponível
         }
       },
-      notification_url: `${process.env.NEXT_PUBLIC_BASE_URL}/api/webhooks/mercadopago`,
+      notification_url: `${process.env.PRODUCTION_URL}/api/webhooks/mercadopago`,
       metadata: {
         email: formData.email,
         plan,
