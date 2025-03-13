@@ -43,12 +43,14 @@ export default function PaymentPage() {
         paymentCreated.current = true
 
         if (!projectCreated.current) {
-          const { error: authError } = await supabase.auth.getSession();
+          const { data: authData, error: authError } = await supabase.auth.getSession();
+
           if (!authError) {
             const projectResponse = await fetch('/api/create-project', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authData.session?.access_token}`,
               },
               body: JSON.stringify({
                 plan,
