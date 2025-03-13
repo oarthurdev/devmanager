@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
+import { createNotification } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,35 +90,57 @@ async function processPayment(paymentId: string) {
         }
       })
       .eq('id', paymentData.metadata.project_id)
-      .select()
+      .select('*, profiles(id, full_name)')
       .single();
 
     if (projectError) {
       throw projectError;
     }
 
-    // Criar notificação
-    if (project && notificationInfo) {
-      await supabase
-        .from('notifications')
-        .insert({
-          user_id: project.user_id,
-          type: notificationInfo.type,
-          title: notificationInfo.title,
-          message: notificationInfo.message,
-          project_id: project.id,
-          read: false,
-          metadata: {
-            payment_id: paymentId,
-            payment_status: paymentData.status,
-            payment_status_detail: paymentData.status_detail
-          }
-        });
-    }
+    if (project) {
+      // Notify project owner
+      await createNotification({
+        userId: project.user_id,
+        type: `payment_${paymentData.status}`,
+        title: notificationInfo.title,
+        message: notificationInfo.message,
+        projectId: project.id,
+        metadata: {
+          payment_id: paymentId,
+          payment_status: paymentData.status,
+          payment_amount: paymentData.transaction_amount
+        }
+      });
 
-    // Se o pagamento foi aprovado, criar tarefas iniciais do projeto
-    if (paymentData.status === 'approved' && project) {
-      await createInitialTasks(supabase, project);
+      // Notify admins
+      const { data: admins } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_admin', true);
+
+      if (admins) {
+        for (const admin of admins) {
+          await createNotification({
+            userId: admin.id,
+            type: `payment_${paymentData.status}`,
+            title: `Pagamento ${notificationInfo.title.toLowerCase()}`,
+            message: `O pagamento do projeto "${project.name}" foi ${notificationInfo.title.toLowerCase()}.`,
+            projectId: project.id,
+            metadata: {
+              payment_id: paymentId,
+              payment_status: paymentData.status,
+              payment_amount: paymentData.transaction_amount,
+              user_id: project.user_id,
+              user_name: project.profiles.full_name
+            }
+          });
+        }
+      }
+
+      // If payment was approved, create initial tasks
+      if (paymentData.status === 'approved') {
+        await createInitialTasks(supabase, project);
+      }
     }
   } catch (error) {
     console.error('Erro no processamento do pagamento:', error);
@@ -230,5 +253,20 @@ async function createInitialTasks(supabase: any, project: any) {
     }
   ];
 
-  await supabase.from('tasks').insert(tasks);
+  // Create tasks
+  const { error: tasksError } = await supabase.from('tasks').insert(tasks);
+  if (tasksError) throw tasksError;
+
+  // Notify about tasks creation
+  await createNotification({
+    userId: project.user_id,
+    type: 'tasks_created',
+    title: 'Tarefas Criadas',
+    message: 'As tarefas iniciais do seu projeto foram criadas. Acompanhe o progresso na área de tarefas.',
+    projectId: project.id,
+    metadata: {
+      task_count: tasks.length,
+      estimated_total_hours: tasks.reduce((acc, task) => acc + task.estimated_hours, 0)
+    }
+  });
 }

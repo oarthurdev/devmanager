@@ -26,6 +26,7 @@ import {
   Shield,
   Info
 } from "lucide-react"
+import { createNotification } from "@/lib/notifications"
 
 interface Project {
   id: string
@@ -252,6 +253,44 @@ export default function ProjectDetailsPage() {
 
       if (error) throw error
 
+      // Create notification for project owner if comment is from admin
+      if (isAdmin && project.user_id !== user.id) {
+        await createNotification({
+          userId: project.user_id,
+          type: 'admin_comment',
+          title: 'Novo Comentário do Administrador',
+          message: `Um administrador comentou em seu projeto: "${newComment.trim().substring(0, 100)}${newComment.length > 100 ? '...' : ''}"`,
+          projectId: project.id,
+          metadata: {
+            comment_id: comment.id,
+            admin_id: user.id
+          }
+        })
+      }
+      // Create notification for admin if comment is from user
+      else if (!isAdmin) {
+        const { data: admins } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('is_admin', true)
+
+        if (admins) {
+          for (const admin of admins) {
+            await createNotification({
+              userId: admin.id,
+              type: 'user_comment',
+              title: 'Novo Comentário do Cliente',
+              message: `${project.profiles.full_name} comentou no projeto "${project.name}": "${newComment.trim().substring(0, 100)}${newComment.length > 100 ? '...' : ''}"`,
+              projectId: project.id,
+              metadata: {
+                comment_id: comment.id,
+                user_id: user.id
+              }
+            })
+          }
+        }
+      }
+
       setComments(prevComments => [comment, ...prevComments])
       setNewComment("")
     } catch (error) {
@@ -265,6 +304,9 @@ export default function ProjectDetailsPage() {
     if (!project || !newStatus) return
 
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
       const { error } = await supabase
         .from("projects")
         .update({ status: newStatus })
@@ -276,18 +318,60 @@ export default function ProjectDetailsPage() {
       setEditStatus(false)
 
       // Add system comment about status change
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { error: commentError } = await supabase
-          .from("project_comments")
-          .insert({
-            project_id: project.id,
-            profile_id: user.id,
-            content: `Status do projeto alterado para: ${newStatus}`,
-            type: "system"
-          })
+      const { error: commentError } = await supabase
+        .from("project_comments")
+        .insert({
+          project_id: project.id,
+          profile_id: user.id,
+          content: `Status do projeto alterado para: ${newStatus}`,
+          type: "system"
+        })
 
-        if (commentError) throw commentError
+      if (commentError) throw commentError
+
+      // Create notification about status change
+      await createNotification({
+        userId: project.user_id,
+        type: 'status_change',
+        title: 'Status do Projeto Atualizado',
+        message: `O status do seu projeto foi atualizado para: ${
+          newStatus === 'completed' ? 'Concluído' :
+          newStatus === 'in_progress' ? 'Em Progresso' :
+          newStatus === 'cancelled' ? 'Cancelado' :
+          'Pendente'
+        }`,
+        projectId: project.id,
+        metadata: {
+          old_status: project.status,
+          new_status: newStatus,
+          updated_by: user.id,
+          is_admin: isAdmin
+        }
+      })
+
+      // If project is completed, notify admins
+      if (newStatus === 'completed') {
+        const { data: admins } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('is_admin', true)
+
+        if (admins) {
+          for (const admin of admins) {
+            await createNotification({
+              userId: admin.id,
+              type: 'project_completed',
+              title: 'Projeto Concluído',
+              message: `O projeto "${project.name}" foi marcado como concluído.`,
+              projectId: project.id,
+              metadata: {
+                user_id: project.user_id,
+                user_name: project.profiles.full_name,
+                completed_by: user.id
+              }
+            })
+          }
+        }
       }
     } catch (error) {
       console.error("Error updating project status:", error)
