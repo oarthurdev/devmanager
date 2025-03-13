@@ -100,6 +100,63 @@ export default function ProjectDetailsPage() {
   const [showCarousel, setShowCarousel] = useState(false)
 
   useEffect(() => {
+    const fetchSession = async () => {
+      try {
+        const session = await supabase.auth.getSession();
+        if (session) {
+          console.log(session);
+          // Aqui você pode setar o token no estado, caso necessário
+          setToken(session.data.session.access_token);
+        } else {
+          console.log("Sessão não encontrada.");
+        }
+      } catch (uplerror) {
+        console.error("Erro ao obter sessão:", error);
+      }
+    };
+
+    fetchSession();
+
+    // if (token.length == 0) {
+    //   setError("Você precisa estar logado para acessar o projeto.");
+    //   return;
+    // }
+
+    const fetchAttachments = async () => {
+      try {
+        const { data, error } = await supabase.storage.from("attachments").list(`${params.id}`);
+        
+        if (error) {
+          console.error("Erro ao listar arquivos:", error);
+          return;
+        }
+    
+        // Para cada arquivo, cria uma URL assinada
+        const filesWithUrls = await Promise.all(
+          data.map(async (file) => {
+            const filePath = `${params.id}/${file.name}`;
+            const { data: signedUrlData, error: signedUrlError } = await supabase
+              .storage
+              .from("attachments")
+              .createSignedUrl(filePath, 3600); // 1 hora de expiração para a URL
+    
+            if (signedUrlError) {
+              console.error("Erro ao gerar URL assinada:", signedUrlError);
+              return { ...file, url: "" }; // Caso haja erro, não retornar a URL
+            }
+  
+            // Retorna o arquivo com a URL assinada
+            return { ...file, url: signedUrlData?.signedUrl };
+          })
+        );
+
+        setAttachments(filesWithUrls);
+      } catch (error) {
+        console.error("Erro ao obter anexos:", error);
+      }
+    };
+    
+  
     const fetchData = async () => {
       try {
         if (!params.id) {
@@ -192,11 +249,13 @@ export default function ProjectDetailsPage() {
 
     fetchData()
     fetchAttachments()
-  }, [params.id, router, supabase])
+  }, [token, params.id, router, supabase ])
 
-  const fetchAttachments = async () => {
-    const { data, error } = await supabase.storage.from("attachments").list(`${params.id}`)
-    if (!error) setAttachments(data || [])
+  const cleanUrl = (url: string | undefined) => {
+    if (url) {
+      return url.replace("/upload", "")
+    }
+    return url
   }
 
   const handleUpload = async (files: FileWithPath[]) => {
@@ -207,14 +266,29 @@ export default function ProjectDetailsPage() {
       const uniqueFileName = `${Date.now()}-${file.name}`
       const filePath = `${params.id}/${uniqueFileName}`
 
-      const { error: uploadError } = await supabase.storage.from("attachments").upload(filePath, file)
-      if (uploadError) {
-        console.error("Upload error:", uploadError)
-        continue
+      const { data: signedUrlData , error} = await supabase.storage.from("attachments").createSignedUploadUrl(filePath)
+
+      if (error) {
+        setError("Failed to upload file")
+        return;
       }
 
-      const { data: signedUrlData } = await supabase.storage.from("attachments").createSignedUrl(filePath, 3600)
-      setAttachments((prev) => [...prev, { name: uniqueFileName, path: filePath, url: signedUrlData?.signedUrl }])
+      const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("attachments")
+      .uploadToSignedUrl(
+        filePath,
+        signedUrlData.token,
+        file
+      );
+    
+      if (uploadError) {
+        setError("Failed to upload file")
+        return;
+      }
+
+      const cleanSignedUrl = cleanUrl(signedUrlData?.signedUrl)
+
+      setAttachments((prev) => [...prev, { name: uniqueFileName, path: filePath, url: cleanSignedUrl }])
     }
 
     setUploading(false)
@@ -702,7 +776,7 @@ export default function ProjectDetailsPage() {
                 {uploading && <p>Enviando...</p>}
                 <div className="grid grid-cols-3 gap-4 mt-4">
                   {attachments.map((file, index) => (
-                    <div key={file.path} className="relative group border rounded-md p-2">
+                    <div key={file.name} className="relative group border rounded-md p-2">
                       {file.name.endsWith(".pdf") ? (
                         <a href={file.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
                           <FileText className="w-4 h-4" /> {file.name}
