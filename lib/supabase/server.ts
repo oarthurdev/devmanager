@@ -4,10 +4,10 @@ import { cookies } from 'next/headers';
 
 export const createClient = () => {
   if (typeof window === 'undefined') {
-    // Se estiver em uma função serverless, cria um cliente sem cookies
+    // If in a serverless function, create a client without cookies
     return createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY! // Use a Service Role Key para escrita
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Use the public anon key for client-side
     );
   }
 
@@ -16,27 +16,26 @@ export const createClient = () => {
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        set(name: string, value: string, options: any) {
+        set(name: string, value: string, options: { path?: string; expires?: Date; maxAge?: number; domain?: string; secure?: boolean; httpOnly?: boolean; sameSite?: 'strict' | 'lax' | 'none'; }) {
           try {
             cookieStore.set({ name, value, ...options });
           } catch (error) {
             console.error('Erro ao definir cookie:', error);
           }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options: { path?: string; domain?: string; secure?: boolean; httpOnly?: boolean; sameSite?: 'strict' | 'lax' | 'none'; expires?: Date }) {
           try {
-            cookieStore.set({ name, value: '', ...options });
+            cookieStore.set({ name, value: '', maxAge: 0, ...options });
           } catch (error) {
             console.error('Erro ao remover cookie:', error);
           }
         },
       },
-    }
-  );
+    });
 };
