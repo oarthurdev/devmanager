@@ -4,9 +4,10 @@ import { createNotification } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
 
+const supabase = createClient();
+
 export async function POST(request: Request) {
   try {
-    const supabase = createClient();
     const body = await request.json();
     const { plan, products, formData, customizations } = body;
 
