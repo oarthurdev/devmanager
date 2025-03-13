@@ -2,11 +2,10 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { createNotification } from '@/lib/notifications';
-import fs from 'fs';
-import path from 'path';
-import { log } from 'console';
 
 export const dynamic = 'force-dynamic';
+
+const supabase = createClient();
 
 // Configuração do cliente do Mercado Pago
 const client = new MercadoPagoConfig({
@@ -15,16 +14,15 @@ const client = new MercadoPagoConfig({
 
 const payment = new Payment(client);
 
-// Função para registrar logs
-function logEvent(message: string) {
-  const logDir = path.join(process.cwd(), 'logs');
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir);
+// Função para registrar logs no banco de dados
+async function logToDatabase(level, message, metadata = {}) {
+  const { error } = await supabase
+    .from('logs')
+    .insert([{ level, message, metadata }]);
+
+  if (error) {
+    console.error('Erro ao salvar log no banco:', error);
   }
-  
-  const logFile = path.join(logDir, 'webhook.log');
-  const timestamp = new Date().toISOString();
-  fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
 }
 
 // Habilitar CORS para o webhook
@@ -41,62 +39,46 @@ export async function OPTIONS() {
 
 export async function POST(request: Request) {
   try {
-    // Validar a requisição
     const body = await request.json();
 
-    // Validação básica do webhook
     if (!body || !body.type || !body.data?.id) {
-      logEvent('Erro: Webhook inválido - falta de parâmetros essenciais.');
+      await logToDatabase('error', 'Webhook inválido - falta de parâmetros essenciais');
       return NextResponse.json({ error: 'Invalid webhook data' }, { status: 400 });
     }
-    
-    // Verificar se é uma notificação de pagamento
+
     if (body.type !== 'payment') {
-      logEvent(`Webhook ignorado - não é um evento de pagamento, tipo (${body.type}).`);
+      await logToDatabase('info', 'Webhook ignorado', { type: body.type });
       return NextResponse.json({ status: 'ignored' });
     }
 
-    // Responder rapidamente para evitar timeout
-    const response = NextResponse.json({ status: 'processing' });
+    await logToDatabase('info', 'Webhook válido recebido', { type: body.type, paymentId: body.data.id });
 
-    logEvent(`Webhook válido recebido. Tipo: ${body.type}, ID: ${body.data.id}`);
-    
-    // Processar o pagamento de forma assíncrona
-    processPayment(body.data.id).catch(error => {
-      logEvent('Erro no processamento assíncrono do pagamento: ' + error.message);
+    processPayment(body.data.id).catch(async (error) => {
+      await logToDatabase('error', 'Erro no processamento assíncrono do pagamento', { error: error.message });
     });
-
-    return response;
+    
+    return NextResponse.json({ status: 'processing' });
   } catch (error) {
-    console.error('Erro no webhook:', error);
+    await logToDatabase('error', 'Erro no webhook', { error: error.message });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-async function processPayment(paymentId: string) {
-  const supabase = createClient();
-
+async function processPayment(paymentId) {
   try {
-    // Buscar detalhes do pagamento no Mercado Pago
     const paymentData = await payment.get({ id: paymentId });
 
-    logEvent(`Pagamento processado: ID ${paymentData.id}, Status: ${paymentData.status}`);
-    logEvent(`Metadata do Projeto: ${paymentData.metadata}`);
+    await logToDatabase('info', 'Pagamento processado', { paymentId: paymentData.id, status: paymentData.status, metadata: paymentData.metadata });
 
-    // Validar dados do pagamento
     if (!paymentData || !paymentData.metadata?.project_id) {
-      logEvent('Erro: Dados do pagamento incompletos ou inválidos.');
       throw new Error('Dados do pagamento incompletos ou inválidos');
     }
 
-    // Mapear status do pagamento para status do projeto
     const projectStatus = getProjectStatus(paymentData.status);
     const notificationInfo = getNotificationInfo(paymentData.status);
 
-    logEvent(`Status do projeto atualizado para: ${projectStatus}`);
-    logEvent(`Notificação: ${notificationInfo.title}`);
+    await logToDatabase('info', 'Atualizando status do projeto', { projectStatus });
 
-    // Atualizar status do projeto
     const { data: project, error: projectError } = await supabase
       .from('projects')
       .update({
@@ -117,9 +99,7 @@ async function processPayment(paymentId: string) {
       .select('*, profiles(id, full_name)')
       .single();
 
-    if (projectError) {
-      throw projectError;
-    }
+    if (projectError) throw projectError;
 
     if (project) {
       // Notify project owner
@@ -167,13 +147,13 @@ async function processPayment(paymentId: string) {
       }
     }
   } catch (error) {
-    console.error('Erro no processamento do pagamento:', error);
+    await logToDatabase('error', 'Erro no processamento do pagamento', { error: error.message });
     throw error;
   }
 }
 
-function  getProjectStatus(paymentStatus: string): string {
-  const statusMap: Record<string, string> = {
+function getProjectStatus(paymentStatus) {
+  const statusMap = {
     approved: 'in_progress',
     pending: 'pending',
     in_process: 'pending',
@@ -182,49 +162,19 @@ function  getProjectStatus(paymentStatus: string): string {
     refunded: 'cancelled',
     charged_back: 'cancelled'
   };
-
   return statusMap[paymentStatus] || 'pending';
 }
 
-function getNotificationInfo(paymentStatus: string) {
-  const notifications: Record<string, { type: string; title: string; message: string }> = {
-    approved: {
-      type: 'payment_success',
-      title: 'Pagamento Aprovado',
-      message: 'Seu pagamento foi aprovado e seu projeto está em andamento.'
-    },
-    pending: {
-      type: 'payment_pending',
-      title: 'Pagamento Pendente',
-      message: 'Aguardando confirmação do pagamento.'
-    },
-    in_process: {
-      type: 'payment_pending',
-      title: 'Pagamento em Processamento',
-      message: 'Seu pagamento está sendo processado.'
-    },
-    rejected: {
-      type: 'payment_failed',
-      title: 'Pagamento Rejeitado',
-      message: 'Houve um problema com seu pagamento. Por favor, tente novamente.'
-    },
-    cancelled: {
-      type: 'payment_failed',
-      title: 'Pagamento Cancelado',
-      message: 'Seu pagamento foi cancelado.'
-    },
-    refunded: {
-      type: 'payment_failed',
-      title: 'Pagamento Reembolsado',
-      message: 'Seu pagamento foi reembolsado.'
-    },
-    charged_back: {
-      type: 'payment_failed',
-      title: 'Pagamento Contestado',
-      message: 'Seu pagamento foi contestado junto ao banco emissor.'
-    }
+function getNotificationInfo(paymentStatus) {
+  const notifications = {
+    approved: { type: 'payment_success', title: 'Pagamento Aprovado', message: 'Seu pagamento foi aprovado.' },
+    pending: { type: 'payment_pending', title: 'Pagamento Pendente', message: 'Aguardando confirmação do pagamento.' },
+    in_process: { type: 'payment_pending', title: 'Pagamento em Processamento', message: 'Seu pagamento está sendo processado.' },
+    rejected: { type: 'payment_failed', title: 'Pagamento Rejeitado', message: 'Houve um problema com seu pagamento.' },
+    cancelled: { type: 'payment_failed', title: 'Pagamento Cancelado', message: 'Seu pagamento foi cancelado.' },
+    refunded: { type: 'payment_failed', title: 'Pagamento Reembolsado', message: 'Seu pagamento foi reembolsado.' },
+    charged_back: { type: 'payment_failed', title: 'Pagamento Contestado', message: 'Seu pagamento foi contestado.' }
   };
-
   return notifications[paymentStatus];
 }
 
