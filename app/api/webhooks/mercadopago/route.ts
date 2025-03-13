@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { createNotification } from '@/lib/notifications';
+import fs from 'fs';
+import path from 'path';
+import { log } from 'console';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +14,18 @@ const client = new MercadoPagoConfig({
 });
 
 const payment = new Payment(client);
+
+// Função para registrar logs
+function logEvent(message: string) {
+  const logDir = path.join(process.cwd(), 'logs');
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir);
+  }
+  
+  const logFile = path.join(logDir, 'webhook.log');
+  const timestamp = new Date().toISOString();
+  fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
+}
 
 // Habilitar CORS para o webhook
 export async function OPTIONS() {
@@ -31,22 +46,24 @@ export async function POST(request: Request) {
 
     // Validação básica do webhook
     if (!body || !body.type || !body.data?.id) {
-      console.warn('Webhook inválido:', body);
+      logEvent('Erro: Webhook inválido - falta de parâmetros essenciais.');
       return NextResponse.json({ error: 'Invalid webhook data' }, { status: 400 });
     }
-
+    
     // Verificar se é uma notificação de pagamento
     if (body.type !== 'payment') {
-      console.info('Webhook ignorado - não é um evento de pagamento:', body.type);
+      logEvent(`Webhook ignorado - não é um evento de pagamento, tipo (${body.type}).`);
       return NextResponse.json({ status: 'ignored' });
     }
 
     // Responder rapidamente para evitar timeout
     const response = NextResponse.json({ status: 'processing' });
 
+    logEvent(`Webhook válido recebido. Tipo: ${body.type}, ID: ${body.data.id}`);
+    
     // Processar o pagamento de forma assíncrona
     processPayment(body.data.id).catch(error => {
-      console.error('Erro no processamento assíncrono do pagamento:', error);
+      logEvent('Erro no processamento assíncrono do pagamento: ' + error.message);
     });
 
     return response;
@@ -63,14 +80,21 @@ async function processPayment(paymentId: string) {
     // Buscar detalhes do pagamento no Mercado Pago
     const paymentData = await payment.get({ id: paymentId });
 
+    logEvent(`Pagamento processado: ID ${paymentData.id}, Status: ${paymentData.status}`);
+    logEvent(`Metadata do Projeto: ${paymentData.metadata}`);
+
     // Validar dados do pagamento
     if (!paymentData || !paymentData.metadata?.project_id) {
+      logEvent('Erro: Dados do pagamento incompletos ou inválidos.');
       throw new Error('Dados do pagamento incompletos ou inválidos');
     }
 
     // Mapear status do pagamento para status do projeto
     const projectStatus = getProjectStatus(paymentData.status);
     const notificationInfo = getNotificationInfo(paymentData.status);
+
+    logEvent(`Status do projeto atualizado para: ${projectStatus}`);
+    logEvent(`Notificação: ${notificationInfo.title}`);
 
     // Atualizar status do projeto
     const { data: project, error: projectError } = await supabase
@@ -148,7 +172,7 @@ async function processPayment(paymentId: string) {
   }
 }
 
-function getProjectStatus(paymentStatus: string): string {
+function  getProjectStatus(paymentStatus: string): string {
   const statusMap: Record<string, string> = {
     approved: 'in_progress',
     pending: 'pending',
