@@ -41,9 +41,8 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    console.log(body)
-    if (body.type !== 'payment') {
-      await logToDatabase('info', 'Webhook ignorado', { type: body.type });
+    if (body.action !== 'payment.updated') {
+      await logToDatabase('info', 'Webhook ignorado', { body: body });
       return NextResponse.json({ status: 'ignored' });
     }
 

@@ -15,8 +15,6 @@ export async function POST(request: NextRequest) {
     // Get the authenticated user
     const { user, error } = await getAuthenticatedUser(request);
 
-    console.log(user)
-    console.log(error)
     if (error || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -44,6 +42,7 @@ export async function POST(request: NextRequest) {
         status: 'pending',
         plan,
         products,
+        payment_status: 'pending',
         requirements: formData.requirements,
         customizations,
         deadline: deadline.toISOString(),
