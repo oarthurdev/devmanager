@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     }
     
     const planPrices = {
-      'Básico': 1, // R$ 4.997,00
+      'Básico': 2, // R$ 4.997,00
       'Profissional': 999700, // R$ 9.997,00
       'Enterprise': 1999700 // R$ 19.997,00
     };
