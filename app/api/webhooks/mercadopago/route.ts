@@ -41,9 +41,10 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    await logToDatabase('info', 'Webhook válido recebido', { type: body.type, paymentId: body.data.id });
 
     if (body.action == 'payment.updated') {
+      await logToDatabase('info', 'Webhook válido recebido', { type: body.type, paymentId: body.data.id });
+
       processPayment(body.data.id).catch(async (error) => {
         await logToDatabase('error', 'Erro no processamento assíncrono do pagamento', { error: error.message });
       });
@@ -67,6 +68,8 @@ async function processPayment(paymentId) {
       await logToDatabase('error', 'Dados do pagamento incompletos ou inválidos');
       throw new Error('Dados do pagamento incompletos ou inválidos');
     }
+
+    console.log(paymentData);
 
     const projectStatus = getProjectStatus(paymentData.status);
     const notificationInfo = getNotificationInfo(paymentData.status);
