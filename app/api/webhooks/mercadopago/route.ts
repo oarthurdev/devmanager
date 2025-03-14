@@ -41,16 +41,14 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    if (body.action !== 'payment.updated') {
-      await logToDatabase('info', 'Webhook ignorado', { body: body });
-      return NextResponse.json({ status: 'ignored' });
-    }
-
     await logToDatabase('info', 'Webhook válido recebido', { type: body.type, paymentId: body.data.id });
 
-    processPayment(body.data.id).catch(async (error) => {
-      await logToDatabase('error', 'Erro no processamento assíncrono do pagamento', { error: error.message });
-    });
+    if (body.action == 'payment.updated') {
+      processPayment(body.data.id).catch(async (error) => {
+        await logToDatabase('error', 'Erro no processamento assíncrono do pagamento', { error: error.message });
+      });
+    }
+    await logToDatabase('info', 'Webhook processado com sucesso');
     
     return NextResponse.json({ status: 'processing' });
   } catch (error) {
