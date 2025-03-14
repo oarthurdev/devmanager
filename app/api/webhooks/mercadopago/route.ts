@@ -41,12 +41,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    if (!body || !body.type || !body.data?.id) {
-      await logToDatabase('error', 'Webhook inválido - falta de parâmetros essenciais');
-      return NextResponse.json({ error: 'Invalid webhook data' }, { status: 400 });
-    }
-
-    if (body.type !== 'payment') {
+    if (body.type !== 'payment' || !body.data?.id) {
       await logToDatabase('info', 'Webhook ignorado', { type: body.type });
       return NextResponse.json({ status: 'ignored' });
     }
@@ -71,6 +66,7 @@ async function processPayment(paymentId) {
     await logToDatabase('info', 'Pagamento processado', { paymentId: paymentData.id, status: paymentData.status, metadata: paymentData.metadata });
 
     if (!paymentData || !paymentData.metadata?.project_id) {
+      await logToDatabase('error', 'Dados do pagamento incompletos ou inválidos');
       throw new Error('Dados do pagamento incompletos ou inválidos');
     }
 
