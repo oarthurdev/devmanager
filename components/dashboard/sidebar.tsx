@@ -10,7 +10,8 @@ import {
   User,
   Settings,
   LogOut,
-  Users
+  Users,
+  UserCircle
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/use-auth"
@@ -62,30 +63,66 @@ const userRoutes = [
   }
 ]
 
+const teamMemberRoutes = [
+  {
+    name: "Dashboard",
+    href: "/dashboard",
+    icon: LayoutDashboard
+  },
+  {
+    name: "Equipe",
+    href: "/dashboard/team",
+    icon: Users
+  },
+  {
+    name: "Configurações",
+    href: "/dashboard/settings",
+    icon: Settings
+  }
+]
+
 export function Sidebar() {
   const pathname = usePathname()
   const { signOut } = useAuth()
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isTeamMember, setIsTeamMember] = useState(false)
   const supabase = createClient()
   
   useEffect(() => {
-    const checkAdmin = async () => {
+    const checkUserRole = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const { data } = await supabase
+        // Check if user is admin
+        const { data: profile } = await supabase
           .from('profiles')
           .select('is_admin')
           .eq('id', user.id)
           .single()
         
-        setIsAdmin(data?.is_admin || false)
+        setIsAdmin(profile?.is_admin || false)
+
+        // Check if user is a team member
+        const { data: teamMember } = await supabase
+          .from('team_members')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .single()
+
+        setIsTeamMember(!!teamMember)
       }
     }
     
-    checkAdmin()
+    checkUserRole()
   }, [supabase])
 
-  const routes = isAdmin ? adminRoutes : userRoutes
+  const getRoutes = () => {
+    if (isAdmin) return adminRoutes
+    if (isTeamMember) return teamMemberRoutes
+    return userRoutes
+  }
+
+  const routes = getRoutes()
   
   return (
     <div className="w-64 bg-card border-r flex flex-col">
