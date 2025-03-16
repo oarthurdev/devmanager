@@ -7,9 +7,10 @@ import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
   FolderKanban,
-  Users,
+  User,
   Settings,
-  LogOut
+  LogOut,
+  Users
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/use-auth"
@@ -29,6 +30,11 @@ const adminRoutes = [
   {
     name: "Usuários",
     href: "/dashboard/users",
+    icon: User
+  },
+  {
+    name: "Equipes",
+    href: "/dashboard/teams",
     icon: Users
   },
   {
