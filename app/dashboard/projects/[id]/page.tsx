@@ -28,10 +28,13 @@ import {
   Info,
   Upload,
   FileText,
-  X
+  X,
+  Users
 } from "lucide-react"
 import { createNotification } from "@/lib/notifications"
 import { VisuallyHidden } from "@reach/visually-hidden"
+import { Label } from "@/components/ui/label"
+import { toast } from "@/hooks/use-toast"
 
 interface Project {
   id: string
@@ -78,6 +81,11 @@ interface Comment {
   }
 }
 
+interface Team {
+  id: string
+  name: string
+}
+
 export default function ProjectDetailsPage() {
   const params = useParams()
   const router = useRouter()
@@ -99,6 +107,9 @@ export default function ProjectDetailsPage() {
   const [signedUrl, setSignedUrl] = useState("")
   const [carouselIndex, setCarouselIndex] = useState(0)
   const [showCarousel, setShowCarousel] = useState(false)
+  const [teams, setTeams] = useState<Team[]>([])
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
+  const [showTeamDialog, setShowTeamDialog] = useState(false)
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -106,7 +117,6 @@ export default function ProjectDetailsPage() {
         const session = await supabase.auth.getSession();
         if (session) {
           console.log(session);
-          // Aqui você pode setar o token no estado, caso necessário
           setToken(session.data.session.access_token);
         } else {
           console.log("Sessão não encontrada.");
@@ -118,11 +128,6 @@ export default function ProjectDetailsPage() {
 
     fetchSession();
 
-    // if (token.length == 0) {
-    //   setError("Você precisa estar logado para acessar o projeto.");
-    //   return;
-    // }
-
     const fetchAttachments = async () => {
       try {
         const { data, error } = await supabase.storage.from("attachments").list(`${params.id}`);
@@ -132,21 +137,19 @@ export default function ProjectDetailsPage() {
           return;
         }
     
-        // Para cada arquivo, cria uma URL assinada
         const filesWithUrls = await Promise.all(
           data.map(async (file) => {
             const filePath = `${params.id}/${file.name}`;
             const { data: signedUrlData, error: signedUrlError } = await supabase
               .storage
               .from("attachments")
-              .createSignedUrl(filePath, 3600); // 1 hora de expiração para a URL
+              .createSignedUrl(filePath, 3600);
     
             if (signedUrlError) {
               console.error("Erro ao gerar URL assinada:", signedUrlError);
-              return { ...file, url: "" }; // Caso haja erro, não retornar a URL
+              return { ...file, url: "" };
             }
   
-            // Retorna o arquivo com a URL assinada
             return { ...file, url: signedUrlData?.signedUrl };
           })
         );
@@ -157,6 +160,28 @@ export default function ProjectDetailsPage() {
       }
     };
     
+    const fetchTeams = async () => {
+      const { data: teamsData } = await supabase
+        .from('teams')
+        .select('*')
+        .order('name')
+
+      if (teamsData) {
+        setTeams(teamsData)
+      }
+
+      if (project?.id) {
+        const { data: teamProject } = await supabase
+          .from('team_projects')
+          .select('team_id')
+          .eq('project_id', project.id)
+          .maybeSingle()
+
+        if (teamProject) {
+          setSelectedTeam(teamProject.team_id)
+        }
+      }
+    }
   
     const fetchData = async () => {
       try {
@@ -173,7 +198,6 @@ export default function ProjectDetailsPage() {
 
         setCurrentUserId(user.id)
 
-        // Check if user is admin
         const { data: profileData } = await supabase
           .from("profiles")
           .select("is_admin")
@@ -182,7 +206,6 @@ export default function ProjectDetailsPage() {
 
         setIsAdmin(profileData?.is_admin || false)
 
-        // Fetch project details with user info
         const { data: projectData, error: projectError } = await supabase
           .from("projects")
           .select(`
@@ -202,7 +225,6 @@ export default function ProjectDetailsPage() {
           return
         }
 
-        // Check if user has access to this project
         if (!profileData?.is_admin && projectData.user_id !== user.id) {
           setError("You don't have permission to view this project")
           return
@@ -213,7 +235,6 @@ export default function ProjectDetailsPage() {
           setNewStatus(projectData.status)
         }
 
-        // Fetch tasks
         const { data: tasksData } = await supabase
           .from("tasks")
           .select("*")
@@ -224,7 +245,6 @@ export default function ProjectDetailsPage() {
           setTasks(tasksData)
         }
 
-        // Fetch comments with admin status
         const { data: commentsData } = await supabase
           .from("project_comments")
           .select(`
@@ -240,6 +260,10 @@ export default function ProjectDetailsPage() {
         if (commentsData) {
           setComments(commentsData)
         }
+
+        if (isAdmin) {
+          fetchTeams()
+        }
       } catch (err) {
         setError("Failed to load project data")
         console.error("Error fetching project data:", err)
@@ -250,7 +274,7 @@ export default function ProjectDetailsPage() {
 
     fetchData()
     fetchAttachments()
-  }, [token, params.id, router, supabase ])
+  }, [token, params.id, router, supabase, project?.id, isAdmin])
 
   const cleanUrl = (url: string | undefined) => {
     if (url) {
@@ -370,7 +394,6 @@ export default function ProjectDetailsPage() {
 
       if (error) throw error
 
-      // Create notification for project owner if comment is from admin
       if (isAdmin && project.user_id !== user.id) {
         await createNotification({
           userId: project.user_id,
@@ -384,7 +407,6 @@ export default function ProjectDetailsPage() {
           }
         })
       }
-      // Create notification for admin if comment is from user
       else if (!isAdmin) {
         const { data: admins } = await supabase
           .from('profiles')
@@ -434,7 +456,6 @@ export default function ProjectDetailsPage() {
       setProject(prevProject => prevProject ? { ...prevProject, status: newStatus } : null)
       setEditStatus(false)
 
-      // Add system comment about status change
       const { error: commentError } = await supabase
         .from("project_comments")
         .insert({
@@ -446,7 +467,6 @@ export default function ProjectDetailsPage() {
 
       if (commentError) throw commentError
 
-      // Create notification about status change
       await createNotification({
         userId: project.user_id,
         type: 'status_change',
@@ -466,7 +486,6 @@ export default function ProjectDetailsPage() {
         }
       })
 
-      // If project is completed, notify admins
       if (newStatus === 'completed') {
         const { data: admins } = await supabase
           .from('profiles')
@@ -509,6 +528,56 @@ export default function ProjectDetailsPage() {
       router.push("/dashboard/projects")
     } catch (error) {
       console.error("Error deleting project:", error)
+    }
+  }
+
+  const assignTeam = async () => {
+    if (!project || !selectedTeam) return
+
+    try {
+      await supabase
+        .from('team_projects')
+        .delete()
+        .eq('project_id', project.id)
+
+      const { error } = await supabase
+        .from('team_projects')
+        .insert({
+          team_id: selectedTeam,
+          project_id: project.id
+        })
+
+      if (error) throw error
+
+      const { data: teamMembers } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .eq('team_id', selectedTeam)
+        .eq('status', 'active')
+
+      if (teamMembers) {
+        for (const member of teamMembers) {
+          await createNotification({
+            userId: member.user_id,
+            type: 'project_assigned',
+            title: 'Novo Projeto Atribuído',
+            message: `O projeto "${project.name}" foi atribuído à sua equipe.`,
+            projectId: project.id
+          })
+        }
+      }
+
+      setShowTeamDialog(false)
+      toast({
+        title: "Equipe atribuída com sucesso",
+        description: "O projeto foi atribuído à equipe selecionada."
+      })
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao atribuir equipe",
+        description: "Ocorreu um erro ao atribuir a equipe ao projeto."
+      })
     }
   }
 
@@ -813,68 +882,130 @@ export default function ProjectDetailsPage() {
                     <DialogContent>
                     <DialogDescription>Imagem</DialogDescription>
                     <VisuallyHidden>
-                      < DialogTitle>Visualizar Imagem</DialogTitle>
+
+                      <DialogTitle>Visualizar Imagem</DialogTitle>
                     </VisuallyHidden>
-                      <img src={attachments[carouselIndex]?.url} alt="Imagem" className="w-full" />
-                    </DialogContent>
-                  </Dialog>
-                )}
+                    <img src={attachments[carouselIndex]?.url} alt="Imagem" className="w-full" />
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </Card>
+
+      <div className="space-y-6">
+        <Card className="p-6">
+          <h3 className="font-semibold mb-4">Informações</h3>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <User className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm text-muted-foreground">Cliente</p>
+                <p className="font-medium">{project.profiles?.full_name}</p>
               </div>
-            </TabsContent>
-          </Tabs>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm text-muted-foreground">Data de Início</p>
+                <p className="font-medium">
+                  {format(new Date(project.created_at), "dd/MM/yyyy")}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm text-muted-foreground">Prazo</p>
+                <p className="font-medium">
+                  {format(new Date(project.deadline), "dd/MM/yyyy")}
+                </p>
+              </div>
+            </div>
+
+            {isAdmin && (
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-5 h-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Equipe Responsável</p>
+                      <p className="font-medium">
+                        {selectedTeam
+                          ? teams.find(t => t.id === selectedTeam)?.name || 'Carregando...'
+                          : 'Não atribuído'}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowTeamDialog(true)}
+                  >
+                    {selectedTeam ? 'Alterar Equipe' : 'Atribuir Equipe'}
+                  </Button>
+                </div>
+
+                <Dialog open={showTeamDialog} onOpenChange={setShowTeamDialog}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Atribuir Equipe</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Selecione a Equipe</Label>
+                        <Select
+                          value={selectedTeam || ''}
+                          onValueChange={setSelectedTeam}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione uma equipe" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teams.map(team => (
+                              <SelectItem key={team.id} value={team.id}>
+                                {team.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowTeamDialog(false)}>
+                        Cancelar
+                      </Button>
+                      <Button onClick={assignTeam} disabled={!selectedTeam}>
+                        Confirmar
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
+          </div>
         </Card>
 
-        <div className="space-y-6">
-          <Card className="p-6">
-            <h3 className="font-semibold mb-4">Informações</h3>
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <User className="w-5 h-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Cliente</p>
-                  <p className="font-medium">{project.profiles?.full_name}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Data de Início</p>
-                  <p className="font-medium">
-                    {format(new Date(project.created_at), "dd/MM/yyyy")}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Prazo</p>
-                  <p className="font-medium">
-                    {format(new Date(project.deadline), "dd/MM/yyyy")}
-                  </p>
-                </div>
-              </div>
+        <Card className="p-6">
+          <h3 className="font-semibold mb-4">Atividade Recente</h3>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-muted-foreground" />
+              <p className="text-sm">
+                {comments.length} comentário(s)
+              </p>
             </div>
-          </Card>
-
-          <Card className="p-6">
-            <h3 className="font-semibold mb-4">Atividade Recente</h3>
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-muted-foreground" />
-                <p className="text-sm">
-                  {comments.length} comentário(s)
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-muted-foreground" />
-                <p className="text-sm">
-                  {tasks.filter(t => t.status === "completed").length} de {tasks.length} tarefas concluídas
-                </p>
-              </div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-muted-foreground" />
+              <p className="text-sm">
+                {tasks.filter(t => t.status === "completed").length} de {tasks.length} tarefas concluídas
+              </p>
             </div>
-          </Card>
-        </div>
+          </div>
+        </Card>
       </div>
+    </div>
     </div>
   )
 }
