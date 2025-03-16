@@ -13,6 +13,7 @@ export async function getAuthenticatedUser(request: NextRequest) {
     }
 
     const { data: { user }, error } = await supabase.auth.getUser(token);
+
     if (error || !user) {
       return { user: null, error: 'Unauthorized' };
     }

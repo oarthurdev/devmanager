@@ -125,6 +125,7 @@ export default function TeamsPage() {
 
   const inviteMember = async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
@@ -139,7 +140,22 @@ export default function TeamsPage() {
 
       if (error) throw error
 
-      // TODO: Send email invitation
+      const response = await fetch("/api/teams/invite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          email: inviteData.email,
+          teamId: inviteData.teamId,
+          roleId: inviteData.roleId,
+        }),
+      });
+  
+      if (!response.ok) {
+        throw new Error("Erro ao enviar convite");
+      }
       
       setShowInviteMemberDialog(false)
       setInviteData({ email: "", roleId: "", teamId: "" })

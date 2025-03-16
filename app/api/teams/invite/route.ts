@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUser } from '@/lib/auth_utils';
 import { sendTeamInvitation } from '@/lib/email';
@@ -8,13 +8,11 @@ export const dynamic = 'force-dynamic';
 
 const supabase = createClient();
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const { user, error: authError } = await getAuthenticatedUser(request);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user } = await getAuthenticatedUser(request);
 
+    console.log(user)
     const body = await request.json();
     const { email, teamId, roleId } = body;
 
