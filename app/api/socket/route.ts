@@ -1,4 +1,6 @@
-import { Server } from 'socket.io'
+if (typeof window === 'undefined') {
+  const { Server } = require('socket.io');
+}
 import { createClient } from '@/lib/supabase/server'
 
 const io = new Server({
