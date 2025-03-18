@@ -63,8 +63,10 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
     const initialize = async () => {
       const cleanup = await initializeChat(roomId)
       const unsubscribe = subscribeToMessages((message) => {
-        setMessages(prev => [...prev, message])
-        scrollToBottom()
+        if (message.room_id === roomId) {
+          setMessages(prev => [...prev, message])
+          scrollToBottom()
+        }
       })
 
       fetchMessages()
@@ -84,11 +86,15 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
     }
   }
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!newMessage.trim()) return
 
-    sendMessage(roomId, newMessage)
-    setNewMessage('')
+    try {
+      await sendMessage(roomId, newMessage)
+      setNewMessage('')
+    } catch (error) {
+      console.error('Error sending message:', error)
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -126,7 +132,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           url: urlData.signedUrl
         }
 
-        sendMessage(roomId, `Arquivo enviado: ${file.name}`, 'file', metadata)
+        await sendMessage(roomId, `Arquivo enviado: ${file.name}`, 'file', metadata)
       }
     } catch (error) {
       console.error('Error uploading file:', error)

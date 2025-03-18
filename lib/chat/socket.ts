@@ -1,40 +1,90 @@
-import { io } from 'socket.io-client'
 import { createClient } from '@/lib/supabase/client'
 
-const socket = io(process.env.NEXT_PUBLIC_APP_URL || '', {
-  autoConnect: false,
-  path: '/api/socketio'
-})
+const supabase = createClient()
 
 export async function initializeChat(roomId: string) {
-  const supabase = createClient()
-  
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return
+  const channel = supabase.channel(`room:${roomId}`, {
+    config: {
+      broadcast: {
+        self: true
+      }
+    }
+  })
 
-  socket.auth = { token: session.access_token }
-  socket.connect()
-  
-  socket.emit('join_room', roomId)
+  channel
+    .on('broadcast', { event: 'message' }, ({ payload }) => {
+      if (typeof payload.callback === 'function') {
+        payload.callback(payload.message)
+      }
+    })
+    .subscribe()
 
   return () => {
-    socket.emit('leave_room', roomId)
-    socket.disconnect()
+    channel.unsubscribe()
   }
 }
 
-export function sendMessage(roomId: string, content: string, type: string = 'text', metadata: any = {}) {
-  socket.emit('message', {
-    roomId,
-    content,
-    type,
-    metadata
-  })
+export async function sendMessage(roomId: string, content: string, type: string = 'text', metadata: any = {}) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data: message, error } = await supabase
+      .from('chat_messages')
+      .insert({
+        room_id: roomId,
+        user_id: user.id,
+        content,
+        type,
+        metadata
+      })
+      .select(`
+        id,
+        content,
+        type,
+        metadata,
+        created_at,
+        profiles (
+          full_name
+        )
+      `)
+      .single()
+
+    if (error) throw error
+
+    // Broadcast the message to all subscribers
+    await supabase.channel(`room:${roomId}`).send({
+      type: 'broadcast',
+      event: 'message',
+      payload: { message }
+    })
+
+    return message
+  } catch (error) {
+    console.error('Error sending message:', error)
+    throw error
+  }
 }
 
 export function subscribeToMessages(callback: (message: any) => void) {
-  socket.on('message', callback)
-  return () => socket.off('message', callback)
+  const subscription = supabase
+    .channel('chat_messages')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_messages'
+      },
+      (payload) => {
+        callback(payload.new)
+      }
+    )
+    .subscribe()
+
+  return () => {
+    subscription.unsubscribe()
+  }
 }
 
-export default socket
+export default supabase
