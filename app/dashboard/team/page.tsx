@@ -16,7 +16,9 @@ import {
   XCircle,
   AlertCircle,
   Calendar,
-  Shield
+  Shield,
+  Mail,
+  Phone
 } from "lucide-react"
 
 interface Project {
@@ -26,7 +28,7 @@ interface Project {
   status: string
   plan: string
   deadline: string
-  user: {
+  profiles: {
     full_name: string
   }
 }
@@ -104,57 +106,58 @@ export default function TeamDashboardPage() {
 
         if (teamData) {
           setTeam(teamData)
-        }
 
-        // Get team projects
-        const { data: projectsData } = await supabase
-          .from("team_projects")
-          .select(`
-            projects (
-              id,
-              name,
-              description,
-              status,
-              plan,
-              deadline,
-              user:user_id (
-                full_name
+          // Get team projects with user details
+          const { data: projectsData } = await supabase
+            .from("team_projects")
+            .select(`
+              projects (
+                id,
+                name,
+                description,
+                status,
+                plan,
+                deadline,
+                profiles:user_id (
+                  full_name
+                )
               )
-            )
-          `)
-          .eq("team_id", teamMember.team_id)
+            `)
+            .eq("team_id", teamData.id)
 
-        if (projectsData) {
-          setProjects(projectsData.map(p => ({
-            ...p.projects,
-            user: p.projects.user
-          })))
-        }
+          if (projectsData) {
+            const formattedProjects = projectsData.map(p => ({
+              ...p.projects,
+              profiles: p.projects.profiles
+            }))
+            setProjects(formattedProjects)
+          }
 
-        // Get team members
-        const { data: membersData } = await supabase
-          .from("team_members")
-          .select(`
-            id,
-            user_id,
-            status,
-            joined_at,
-            profiles (
-              full_name,
-              email,
-              phone
-            ),
-            roles!fk_role (
+          // Get team members with profiles and roles
+          const { data: membersData } = await supabase
+            .from("team_members")
+            .select(`
               id,
-              name,
-              level
-            )
-          `)
-          .eq("team_id", teamMember.team_id)
-          .order("roles(level)", { ascending: false })
+              user_id,
+              status,
+              joined_at,
+              profiles!fk_user (
+                full_name,
+                email,
+                phone
+              ),
+              roles!fk_role (
+                id,
+                name,
+                level
+              )
+            `)
+            .eq("team_id", teamData.id)
+            .order("roles(level)", { ascending: false })
 
-        if (membersData) {
-          setMembers(membersData)
+          if (membersData) {
+            setMembers(membersData)
+          }
         }
       } catch (error) {
         console.error("Error fetching team data:", error)
@@ -288,7 +291,7 @@ export default function TeamDashboardPage() {
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Users className="w-4 h-4" />
-                          Cliente: {project.user?.full_name}
+                          Cliente: {project.profiles?.full_name}
                         </span>
                         <span className="flex items-center gap-1">
                           <Calendar className="w-4 h-4" />
@@ -316,8 +319,8 @@ export default function TeamDashboardPage() {
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <h4 className="font-medium">{member.profiles.full_name}</h4>
-                        <Badge variant="secondary">{member.roles.name}</Badge>
+                        <h4 className="font-medium">{member.profiles?.full_name}</h4>
+                        <Badge variant="secondary">{member.roles?.name}</Badge>
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${getStatusColor(member.status)}`}>
                           {getStatusIcon(member.status)}
                           {member.status === "active" ? "Ativo" :
@@ -325,16 +328,19 @@ export default function TeamDashboardPage() {
                            "Inativo"}
                         </span>
                       </div>
-                      {userRole && userRole.level >= member.roles.level && (
+                      {userRole && userRole.level >= (member.roles?.level || 0) && (
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            {member.profiles.email}
+                            <Mail className="w-4 h-4" />
+                            {member.profiles?.email}
                           </span>
                           <span className="flex items-center gap-1">
-                            {member.profiles.phone}
+                            <Phone className="w-4 h-4" />
+                            {member.profiles?.phone}
                           </span>
                           {member.joined_at && (
                             <span className="flex items-center gap-1">
+                              <Calendar className="w-4 h-4" />
                               Entrou em {format(new Date(member.joined_at), "dd/MM/yyyy")}
                             </span>
                           )}

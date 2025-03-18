@@ -3,193 +3,31 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
-import { format } from "date-fns"
-import Dropzone, { FileWithPath } from "react-dropzone"
-import {
-  Clock,
-  Calendar,
-  User,
-  Package,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  MessageSquare,
-  Edit,
-  Trash2,
-  CreditCard,
-  Loader2,
-  Shield,
-  Info,
-  Upload,
-  FileText,
-  X,
-  Users
-} from "lucide-react"
 import { createNotification } from "@/lib/notifications"
-import { VisuallyHidden } from "@reach/visually-hidden"
-import { Label } from "@/components/ui/label"
-import { toast } from "@/hooks/use-toast"
-
-interface Project {
-  id: string
-  name: string
-  description: string
-  status: string
-  plan: string
-  products: string[]
-  deadline: string
-  user_id: string
-  created_at: string
-  requirements: string
-  customizations: Record<string, any>
-  payment_status: string
-  payment_details: any
-  profiles: {
-    full_name: string
-    phone: string
-    document: string
-    company_name?: string
-  }
-}
-
-interface Task {
-  id: string
-  title: string
-  description: string
-  status: string
-  priority: string
-  estimated_hours: number
-  deadline: string
-  completed_at: string | null
-}
-
-interface Comment {
-  id: string
-  project_id: string
-  content: string
-  created_at: string
-  type: "user" | "admin" | "system"
-  profiles: {
-    full_name: string
-    is_admin: boolean
-  }
-}
-
-interface Team {
-  id: string
-  name: string
-}
+import { ProjectHeader } from "./components/project-header"
+import { ProjectInfo } from "./components/project-info"
+import { ProjectComments } from "./components/project-comments"
+import ProjectAttachments from "./components/project-attachments"
+import ProjectTasks from "./components/project-tasks"
+import { Loader2 } from "lucide-react"
 
 export default function ProjectDetailsPage() {
   const params = useParams()
   const router = useRouter()
-  const [project, setProject] = useState<Project | null>(null)
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [comments, setComments] = useState<Comment[]>([])
-  const [newComment, setNewComment] = useState("")
+  const [project, setProject] = useState<any>(null)
+  const [comments, setComments] = useState<any[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<{ name: string; level: number } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [editStatus, setEditStatus] = useState(false)
-  const [newStatus, setNewStatus] = useState("")
   const supabase = createClient()
-  const [attachments, setAttachments] = useState([])
-  const [uploading, setUploading] = useState(false)
-  const [token, setToken] = useState("")
-  const [signedUrl, setSignedUrl] = useState("")
-  const [carouselIndex, setCarouselIndex] = useState(0)
-  const [showCarousel, setShowCarousel] = useState(false)
-  const [teams, setTeams] = useState<Team[]>([])
-  const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
-  const [showTeamDialog, setShowTeamDialog] = useState(false)
 
   useEffect(() => {
-    const fetchSession = async () => {
-      try {
-        const session = await supabase.auth.getSession();
-        if (session) {
-          console.log(session);
-          setToken(session.data.session.access_token);
-        } else {
-          console.log("Sessão não encontrada.");
-        }
-      } catch (uplerror) {
-        console.error("Erro ao obter sessão:", error);
-      }
-    };
-
-    fetchSession();
-
-    const fetchAttachments = async () => {
-      try {
-        const { data, error } = await supabase.storage.from("attachments").list(`${params.id}`);
-        
-        if (error) {
-          console.error("Erro ao listar arquivos:", error);
-          return;
-        }
-    
-        const filesWithUrls = await Promise.all(
-          data.map(async (file) => {
-            const filePath = `${params.id}/${file.name}`;
-            const { data: signedUrlData, error: signedUrlError } = await supabase
-              .storage
-              .from("attachments")
-              .createSignedUrl(filePath, 3600);
-    
-            if (signedUrlError) {
-              console.error("Erro ao gerar URL assinada:", signedUrlError);
-              return { ...file, url: "" };
-            }
-  
-            return { ...file, url: signedUrlData?.signedUrl };
-          })
-        );
-
-        setAttachments(filesWithUrls);
-      } catch (error) {
-        console.error("Erro ao obter anexos:", error);
-      }
-    };
-    
-    const fetchTeams = async () => {
-      const { data: teamsData } = await supabase
-        .from('teams')
-        .select('*')
-        .order('name')
-
-      if (teamsData) {
-        setTeams(teamsData)
-      }
-
-      if (project?.id) {
-        const { data: teamProject } = await supabase
-          .from('team_projects')
-          .select('team_id')
-          .eq('project_id', project.id)
-          .maybeSingle()
-
-        if (teamProject) {
-          setSelectedTeam(teamProject.team_id)
-        }
-      }
-    }
-  
     const fetchData = async () => {
       try {
-        if (!params.id) {
-          setError("Project ID not found")
-          return
-        }
-
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) {
           router.push("/auth/login")
@@ -198,20 +36,40 @@ export default function ProjectDetailsPage() {
 
         setCurrentUserId(user.id)
 
-        const { data: profileData } = await supabase
+        // Get user's role in the team assigned to this project
+        const { data: teamMember } = await supabase
+          .from("team_members")
+          .select(`
+            roles (
+              name,
+              level
+            )
+          `)
+          .eq("user_id", user.id)
+          .eq("status", "active")
+          .single()
+
+        if (teamMember?.roles) {
+          setUserRole(teamMember.roles)
+        }
+
+        // Check if user is admin
+        const { data: profile } = await supabase
           .from("profiles")
           .select("is_admin")
           .eq("id", user.id)
           .single()
 
-        setIsAdmin(profileData?.is_admin || false)
+        setIsAdmin(profile?.is_admin || false)
 
+        // Fetch project details
         const { data: projectData, error: projectError } = await supabase
           .from("projects")
           .select(`
             *,
             profiles (
               full_name,
+              email,
               phone,
               document,
               company_name
@@ -220,31 +78,31 @@ export default function ProjectDetailsPage() {
           .eq("id", params.id)
           .single()
 
-        if (projectError) {
-          setError("Project not found")
-          return
-        }
+        if (projectError) throw projectError
 
-        if (!profileData?.is_admin && projectData.user_id !== user.id) {
-          setError("You don't have permission to view this project")
-          return
-        }
-
-        if (projectData) {
-          setProject(projectData)
-          setNewStatus(projectData.status)
-        }
-
-        const { data: tasksData } = await supabase
-          .from("tasks")
-          .select("*")
+        // Check if user has access to the project
+        const { data: teamProject } = await supabase
+          .from("team_projects")
+          .select("team_id")
           .eq("project_id", params.id)
-          .order("created_at", { ascending: true })
+          .single()
 
-        if (tasksData) {
-          setTasks(tasksData)
+        if (teamProject) {
+          const { data: userTeam } = await supabase
+            .from("team_members")
+            .select("team_id")
+            .eq("user_id", user.id)
+            .eq("team_id", teamProject.team_id)
+            .single()
+
+          if (!userTeam && !profile?.is_admin && projectData.user_id !== user.id) {
+            throw new Error("Você não tem permissão para ver este projeto")
+          }
         }
 
+        setProject(projectData)
+
+        // Fetch comments
         const { data: commentsData } = await supabase
           .from("project_comments")
           .select(`
@@ -260,12 +118,8 @@ export default function ProjectDetailsPage() {
         if (commentsData) {
           setComments(commentsData)
         }
-
-        if (isAdmin) {
-          fetchTeams()
-        }
-      } catch (err) {
-        setError("Failed to load project data")
+      } catch (err: any) {
+        setError(err.message || "Erro ao carregar dados do projeto")
         console.error("Error fetching project data:", err)
       } finally {
         setIsLoading(false)
@@ -273,179 +127,12 @@ export default function ProjectDetailsPage() {
     }
 
     fetchData()
-    fetchAttachments()
-  }, [token, params.id, router, supabase, project?.id, isAdmin])
+  }, [params.id, router, supabase])
 
-  const cleanUrl = (url: string | undefined) => {
-    if (url) {
-      return url.replace("/upload", "")
-    }
-    return url
-  }
-
-  const handleUpload = async (files: FileWithPath[]) => {
-    if (!files.length) return;
-    setUploading(true);
-
-    for (const file of files) {
-      const uniqueFileName = `${Date.now()}-${file.name}`
-      const filePath = `${params.id}/${uniqueFileName}`
-
-      const { data: signedUrlData , error} = await supabase.storage.from("attachments").createSignedUploadUrl(filePath)
-
-      if (error) {
-        setError("Failed to upload file")
-        return;
-      }
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("attachments")
-      .uploadToSignedUrl(
-        filePath,
-        signedUrlData.token,
-        file
-      );
-    
-      if (uploadError) {
-        setError("Failed to upload file")
-        return;
-      }
-
-      const cleanSignedUrl = cleanUrl(signedUrlData?.signedUrl)
-
-      setAttachments((prev) => [...prev, { name: uniqueFileName, path: filePath, url: cleanSignedUrl }])
-    }
-
-    setUploading(false)
-  }
-
-  const deleteFile = async (filePath) => {
-    await supabase.storage.from("attachments").remove([filePath])
-    setAttachments((prev) => prev.filter((file) => file.path !== filePath))
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle2 className="w-5 h-5 text-green-600" />
-      case "in_progress":
-        return <Clock className="w-5 h-5 text-blue-600" />
-      case "cancelled":
-        return <XCircle className="w-5 h-5 text-red-600" />
-      default:
-        return <AlertCircle className="w-5 h-5 text-yellow-600" />
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-100 text-green-800"
-      case "in_progress":
-        return "bg-blue-100 text-blue-800"
-      case "cancelled":
-        return "bg-red-100 text-red-800"
-      default:
-        return "bg-yellow-100 text-yellow-800"
-    }
-  }
-
-  const getCommentIcon = (type: string) => {
-    switch (type) {
-      case "admin":
-        return <Shield className="w-5 h-5 text-primary" />
-      case "system":
-        return <Info className="w-5 h-5 text-blue-500" />
-      default:
-        return <User className="w-5 h-5 text-muted-foreground" />
-    }
-  }
-
-  const getCommentAuthor = (comment: Comment) => {
-    if (comment.type === "system") {
-      return "Sistema"
-    }
-    return comment.profiles?.full_name || (comment.type === "admin" ? "Administrador" : "Usuário")
-  }
-
-  const addComment = async () => {
-    if (!newComment.trim() || !project) return
+  const updateProjectStatus = async (newStatus: string) => {
+    if (!project || !userRole || userRole.level < 3) return
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: comment, error } = await supabase
-        .from("project_comments")
-        .insert({
-          project_id: project.id,
-          profile_id: user.id,
-          content: newComment.trim(),
-          type: isAdmin ? "admin" : "user"
-        })
-        .select(`
-          *,
-          profiles (
-            full_name,
-            is_admin
-          )
-        `)
-        .single()
-
-      if (error) throw error
-
-      if (isAdmin && project.user_id !== user.id) {
-        await createNotification({
-          userId: project.user_id,
-          type: 'admin_comment',
-          title: 'Novo Comentário do Administrador',
-          message: `Um administrador comentou em seu projeto: "${newComment.trim().substring(0, 100)}${newComment.length > 100 ? '...' : ''}"`,
-          projectId: project.id,
-          metadata: {
-            comment_id: comment.id,
-            admin_id: user.id
-          }
-        })
-      }
-      else if (!isAdmin) {
-        const { data: admins } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('is_admin', true)
-
-        if (admins) {
-          for (const admin of admins) {
-            await createNotification({
-              userId: admin.id,
-              type: 'user_comment',
-              title: 'Novo Comentário do Cliente',
-              message: `${project.profiles.full_name} comentou no projeto "${project.name}": "${newComment.trim().substring(0, 100)}${newComment.length > 100 ? '...' : ''}"`,
-              projectId: project.id,
-              metadata: {
-                comment_id: comment.id,
-                user_id: user.id
-              }
-            })
-          }
-        }
-      }
-
-      setComments(prevComments => [comment, ...prevComments])
-      setNewComment("")
-    } catch (error) {
-      console.error("Error adding comment:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const updateProjectStatus = async () => {
-    if (!project || !newStatus) return
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
       const { error } = await supabase
         .from("projects")
         .update({ status: newStatus })
@@ -453,14 +140,13 @@ export default function ProjectDetailsPage() {
 
       if (error) throw error
 
-      setProject(prevProject => prevProject ? { ...prevProject, status: newStatus } : null)
-      setEditStatus(false)
+      setProject(prev => ({ ...prev, status: newStatus }))
 
       const { error: commentError } = await supabase
         .from("project_comments")
         .insert({
           project_id: project.id,
-          profile_id: user.id,
+          profile_id: currentUserId,
           content: `Status do projeto alterado para: ${newStatus}`,
           type: "system"
         })
@@ -481,12 +167,55 @@ export default function ProjectDetailsPage() {
         metadata: {
           old_status: project.status,
           new_status: newStatus,
-          updated_by: user.id,
+          updated_by: currentUserId,
           is_admin: isAdmin
         }
       })
+    } catch (error) {
+      console.error("Error updating project status:", error)
+    }
+  }
 
-      if (newStatus === 'completed') {
+  const addComment = async (content: string) => {
+    if (!project || !currentUserId) return
+
+    try {
+      const { data: comment, error } = await supabase
+        .from("project_comments")
+        .insert({
+          project_id: project.id,
+          profile_id: currentUserId,
+          content: content.trim(),
+          type: isAdmin ? "admin" : "user"
+        })
+        .select(`
+          *,
+          profiles (
+            full_name,
+            is_admin
+          )
+        `)
+        .single()
+
+      if (error) throw error
+
+      setComments(prev => [comment, ...prev])
+
+      // Notify relevant users
+      if (isAdmin && project.user_id !== currentUserId) {
+        await createNotification({
+          userId: project.user_id,
+          type: 'admin_comment',
+          title: 'Novo Comentário do Administrador',
+          message: `Um administrador comentou em seu projeto: "${content.trim().substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
+          projectId: project.id,
+          metadata: {
+            comment_id: comment.id,
+            admin_id: currentUserId
+          }
+        })
+      }
+      else if (!isAdmin) {
         const { data: admins } = await supabase
           .from('profiles')
           .select('id')
@@ -496,26 +225,25 @@ export default function ProjectDetailsPage() {
           for (const admin of admins) {
             await createNotification({
               userId: admin.id,
-              type: 'project_completed',
-              title: 'Projeto Concluído',
-              message: `O projeto "${project.name}" foi marcado como concluído.`,
+              type: 'user_comment',
+              title: 'Novo Comentário do Cliente',
+              message: `${project.profiles.full_name} comentou no projeto "${project.name}": "${content.trim().substring(0, 100)}${content.length > 100 ? '...' : ''}"`,
               projectId: project.id,
               metadata: {
-                user_id: project.user_id,
-                user_name: project.profiles.full_name,
-                completed_by: user.id
+                comment_id: comment.id,
+                user_id: currentUserId
               }
             })
           }
         }
       }
     } catch (error) {
-      console.error("Error updating project status:", error)
+      console.error("Error adding comment:", error)
     }
   }
 
   const deleteProject = async () => {
-    if (!project) return
+    if (!project || !isAdmin) return
 
     try {
       const { error } = await supabase
@@ -531,56 +259,6 @@ export default function ProjectDetailsPage() {
     }
   }
 
-  const assignTeam = async () => {
-    if (!project || !selectedTeam) return
-
-    try {
-      await supabase
-        .from('team_projects')
-        .delete()
-        .eq('project_id', project.id)
-
-      const { error } = await supabase
-        .from('team_projects')
-        .insert({
-          team_id: selectedTeam,
-          project_id: project.id
-        })
-
-      if (error) throw error
-
-      const { data: teamMembers } = await supabase
-        .from('team_members')
-        .select('user_id')
-        .eq('team_id', selectedTeam)
-        .eq('status', 'active')
-
-      if (teamMembers) {
-        for (const member of teamMembers) {
-          await createNotification({
-            userId: member.user_id,
-            type: 'project_assigned',
-            title: 'Novo Projeto Atribuído',
-            message: `O projeto "${project.name}" foi atribuído à sua equipe.`,
-            projectId: project.id
-          })
-        }
-      }
-
-      setShowTeamDialog(false)
-      toast({
-        title: "Equipe atribuída com sucesso",
-        description: "O projeto foi atribuído à equipe selecionada."
-      })
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Erro ao atribuir equipe",
-        description: "Ocorreu um erro ao atribuir a equipe ao projeto."
-      })
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -592,94 +270,24 @@ export default function ProjectDetailsPage() {
   if (error || !project) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
-        <AlertCircle className="w-12 h-12 text-destructive mb-4" />
-        <h2 className="text-2xl font-bold mb-2">Error</h2>
-        <p className="text-muted-foreground">{error || "Project not found"}</p>
-        <Button
-          variant="outline"
-          className="mt-4"
-          onClick={() => router.push("/dashboard/projects")}
-        >
-          Back to Projects
-        </Button>
+        <h2 className="text-2xl font-bold mb-2">Erro</h2>
+        <p className="text-muted-foreground">{error || "Projeto não encontrado"}</p>
       </div>
     )
   }
 
-  const canEdit = isAdmin || project.user_id === currentUserId
+  const canEdit = isAdmin || project.user_id === currentUserId || userRole?.level >= 2
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">{project.name}</h1>
-          <div className="flex items-center gap-2">
-            {editStatus ? (
-              <div className="flex items-center gap-2">
-                <Select value={newStatus} onValueChange={setNewStatus}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pendente</SelectItem>
-                    <SelectItem value="in_progress">Em Progresso</SelectItem>
-                    <SelectItem value="completed">Concluído</SelectItem>
-                    <SelectItem value="cancelled">Cancelado</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button size="sm" onClick={updateProjectStatus}>Salvar</Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditStatus(false)}>Cancelar</Button>
-              </div>
-            ) : (
-              <>
-                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-sm ${getStatusColor(project.status)}`}>
-                  {getStatusIcon(project.status)}
-                  {project.status === "completed" ? "Concluído" :
-                   project.status === "in_progress" ? "Em Progresso" :
-                   project.status === "cancelled" ? "Cancelado" :
-                   "Pendente"}
-                </span>
-                {canEdit && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditStatus(true)}
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                )}
-              </>
-            )}
-            <Badge variant="outline">{project.plan}</Badge>
-          </div>
-        </div>
-        {isAdmin && (
-          <div className="flex gap-2">
-            <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-              <DialogTrigger asChild>
-                <Button variant="destructive">
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Excluir Projeto
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Confirmar Exclusão</DialogTitle>
-                </DialogHeader>
-                <p>Tem certeza que deseja excluir este projeto? Esta ação não pode ser desfeita.</p>
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => setShowDeleteDialog(false)}>
-                    Cancelar
-                  </Button>
-                  <Button variant="destructive" onClick={deleteProject}>
-                    Excluir
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        )}
-      </div>
+      <ProjectHeader
+        project={project}
+        canEdit={canEdit}
+        isAdmin={isAdmin}
+        userRole={userRole}
+        onUpdateStatus={updateProjectStatus}
+        onDelete={deleteProject}
+      />
 
       <div className="grid grid-cols-3 gap-6">
         <Card className="p-6 col-span-2">
@@ -687,8 +295,6 @@ export default function ProjectDetailsPage() {
             <TabsList>
               <TabsTrigger value="overview">Visão Geral</TabsTrigger>
               <TabsTrigger value="tasks">Tarefas</TabsTrigger>
-              <TabsTrigger value="requirements">Requisitos</TabsTrigger>
-              <TabsTrigger value="customizations">Personalizações</TabsTrigger>
               <TabsTrigger value="comments">Comentários</TabsTrigger>
               <TabsTrigger value="attachments">Anexos</TabsTrigger>
             </TabsList>
@@ -699,313 +305,38 @@ export default function ProjectDetailsPage() {
                 <p className="text-muted-foreground">{project.description}</p>
               </div>
 
-              <div>
-                <h3 className="font-semibold mb-2">Produtos</h3>
-                <div className="flex flex-wrap gap-2">
-                  {project.products.map((product, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-full"
-                    >
-                      <Package className="w-4 h-4" />
-                      <span>{product}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {project.payment_details && (
+              {project.requirements && (
                 <div>
-                  <h3 className="font-semibold mb-2">Detalhes do Pagamento</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-muted-foreground" />
-                      <span>Status: {project.payment_status}</span>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      ID do Pagamento: {project.payment_details.payment_id}
-                    </div>
+                  <h3 className="font-semibold mb-2">Requisitos</h3>
+                  <div className="prose prose-sm max-w-none">
+                    {project.requirements}
                   </div>
                 </div>
               )}
             </TabsContent>
 
-            <TabsContent value="tasks" className="space-y-4">
-              {tasks.map((task) => (
-                <Card key={task.id} className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium">{task.title}</h4>
-                    <Badge variant={task.priority === "high" ? "destructive" : "outline"}>
-                      {task.priority}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">{task.description}</p>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className={`px-2 py-1 rounded ${getStatusColor(task.status)}`}>
-                      {task.status}
-                    </span>
-                    <div className="flex items-center gap-4">
-                      <span>{task.estimated_hours}h estimadas</span>
-                      <span>Prazo: {format(new Date(task.deadline), "dd/MM/yyyy")}</span>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </TabsContent>
-
-            <TabsContent value="requirements">
-              <div className="prose prose-sm max-w-none">
-                {project.requirements}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="customizations">
-              <div className="space-y-6">
-                {Object.entries(project.customizations || {}).map(([product, details]) => (
-                  <div key={product}>
-                    <h3 className="font-semibold mb-2 capitalize">{product}</h3>
-                    <div className="space-y-4">
-                      {Object.entries(details as Record<string, any>).map(([key, value]) => (
-                        <div key={key}>
-                          <h4 className="text-sm font-medium capitalize">{key}</h4>
-                          {Array.isArray(value) ? (
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {value.map((item, index) => (
-                                <Badge key={index} variant="secondary">
-                                  {item}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {value}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <TabsContent value="tasks">
+              <ProjectTasks projectId={project.id} canEdit={canEdit} />
             </TabsContent>
 
             <TabsContent value="comments">
-              <div className="space-y-6">
-                {(isAdmin || project.user_id === currentUserId) && (
-                  <div className="flex gap-4">
-                    <textarea
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      placeholder="Adicione um comentário..."
-                      className="flex-1 min-h-[100px] p-3 rounded-md border"
-                    />
-                    <Button
-                      onClick={addComment}
-                      disabled={isLoading || !newComment.trim()}
-                    >
-                      {isLoading ? "Enviando..." : "Comentar"}
-                    </Button>
-                  </div>
-                )}
-
-                <div className="space-y-4">
-                  {comments.map((comment) => (
-                    <Card key={comment.id} className="p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        {getCommentIcon(comment.type)}
-                        <span className="font-medium">
-                          {getCommentAuthor(comment)}
-                          {comment.type === "admin" && (
-                            <span className="ml-2 text-sm text-primary">(Admin)</span>
-                          )}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {format(new Date(comment.created_at), "dd/MM/yyyy HH:mm")}
-                        </span>
-                      </div>
-                      <p className={comment.type === "system" ? "text-sm text-muted-foreground italic" : ""}>
-                        {comment.content}
-                      </p>
-                    </Card>
-                  ))}
-                </div>
-              </div>
+              <ProjectComments
+                comments={comments}
+                canComment={canEdit}
+                onAddComment={addComment}
+              />
             </TabsContent>
 
             <TabsContent value="attachments">
-              <div className="space-y-4">
-                <Dropzone onDrop={handleUpload} accept={{ "image/*": [".png", ".jpg", ".jpeg"], "application/pdf": [".pdf"] }}>
-                  {({ getRootProps, getInputProps }) => (
-                    <div {...getRootProps()} className="border-dashed border-2 p-6 rounded-lg cursor-pointer text-center">
-                      <input {...getInputProps()} />
-                      <Upload className="w-6 h-6 mx-auto text-gray-500" />
-                      <p className="text-gray-600 mt-2">Arraste um arquivo ou clique para selecionar</p>
-                    </div>
-                  )}
-                </Dropzone>
-                {uploading && <p>Enviando...</p>}
-                <div className="grid grid-cols-3 gap-4 mt-4">
-                  {attachments.map((file, index) => (
-                    <div key={file.name} className="relative group border rounded-md p-2">
-                      {file.name.endsWith(".pdf") ? (
-                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-                          <FileText className="w-4 h-4" /> {file.name}
-                        </a>
-                      ) : file.name.match(/.(jpg|jpeg|png)$/) ? (
-                        <img
-                          src={file.url}
-                          alt={file.name}
-                          className="w-full h-32 object-cover rounded cursor-pointer"
-                          onClick={() => {
-                            setCarouselIndex(index)
-                            setShowCarousel(true)
-                          }}
-                        />
-                      ) : (
-                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600">
-                          <FileText className="w-4 h-4" /> {file.name}
-                        </a>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute top-1 right-1 text-red-500 opacity-0 group-hover:opacity-100"
-                        onClick={() => deleteFile(file.path)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-                {showCarousel && (
-                  <Dialog open={showCarousel} onOpenChange={setShowCarousel}>
-                    <DialogContent>
-                    <DialogDescription>Imagem</DialogDescription>
-                    <VisuallyHidden>
-
-                      <DialogTitle>Visualizar Imagem</DialogTitle>
-                    </VisuallyHidden>
-                    <img src={attachments[carouselIndex]?.url} alt="Imagem" className="w-full" />
-                  </DialogContent>
-                </Dialog>
-              )}
-            </div>
-          </TabsContent>
-        </Tabs>
-      </Card>
-
-      <div className="space-y-6">
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4">Informações</h3>
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <User className="w-5 h-5 text-muted-foreground" />
-              <div>
-                <p className="text-sm text-muted-foreground">Cliente</p>
-                <p className="font-medium">{project.profiles?.full_name}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-muted-foreground" />
-              <div>
-                <p className="text-sm text-muted-foreground">Data de Início</p>
-                <p className="font-medium">
-                  {format(new Date(project.created_at), "dd/MM/yyyy")}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-muted-foreground" />
-              <div>
-                <p className="text-sm text-muted-foreground">Prazo</p>
-                <p className="font-medium">
-                  {format(new Date(project.deadline), "dd/MM/yyyy")}
-                </p>
-              </div>
-            </div>
-
-            {isAdmin && (
-              <div className="mt-4 pt-4 border-t">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-5 h-5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Equipe Responsável</p>
-                      <p className="font-medium">
-                        {selectedTeam
-                          ? teams.find(t => t.id === selectedTeam)?.name || 'Carregando...'
-                          : 'Não atribuído'}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowTeamDialog(true)}
-                  >
-                    {selectedTeam ? 'Alterar Equipe' : 'Atribuir Equipe'}
-                  </Button>
-                </div>
-
-                <Dialog open={showTeamDialog} onOpenChange={setShowTeamDialog}>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Atribuir Equipe</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <Label>Selecione a Equipe</Label>
-                        <Select
-                          value={selectedTeam || ''}
-                          onValueChange={setSelectedTeam}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione uma equipe" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {teams.map(team => (
-                              <SelectItem key={team.id} value={team.id}>
-                                {team.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowTeamDialog(false)}>
-                        Cancelar
-                      </Button>
-                      <Button onClick={assignTeam} disabled={!selectedTeam}>
-                        Confirmar
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            )}
-          </div>
+              <ProjectAttachments projectId={project.id} canEdit={canEdit} />
+            </TabsContent>
+          </Tabs>
         </Card>
 
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4">Atividade Recente</h3>
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="w-5 h-5 text-muted-foreground" />
-              <p className="text-sm">
-                {comments.length} comentário(s)
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-muted-foreground" />
-              <p className="text-sm">
-                {tasks.filter(t => t.status === "completed").length} de {tasks.length} tarefas concluídas
-              </p>
-            </div>
-          </div>
-        </Card>
+        <div className="space-y-6">
+          <ProjectInfo project={project} userRole={userRole} />
+        </div>
       </div>
-    </div>
     </div>
   )
 }
