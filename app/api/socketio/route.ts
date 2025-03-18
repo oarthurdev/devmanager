@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export default async function GET(req: NextApiRequest, res: any) {
+export async function GET(req: NextApiRequest, res: any) {
   if (!res.socket.server.io) {
     const httpServer: NetServer = res.socket.server as any
     const io = new ServerIO(httpServer, {
@@ -97,4 +97,9 @@ export default async function GET(req: NextApiRequest, res: any) {
   }
 
   res.end()
+}
+
+export async function POST(req: NextApiRequest, res: any) {
+  // Handle POST requests the same way as GET
+  return GET(req, res)
 }
