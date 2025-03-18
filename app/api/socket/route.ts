@@ -1,6 +1,4 @@
-if (typeof window === 'undefined') {
-  const { Server } = require('socket.io');
-}
+import { Server } from 'socket.io';
 import { createClient } from '@/lib/supabase/server'
 
 const io = new Server({
@@ -75,7 +73,7 @@ io.on('connection', (socket) => {
   })
 })
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export default function handler(req, res) {
   if (!res.socket.server.io) {
