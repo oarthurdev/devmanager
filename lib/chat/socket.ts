@@ -1,11 +1,9 @@
 import { io } from 'socket.io-client'
 import { createClient } from '@/lib/supabase/client'
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001'
-
-export const socket = io(SOCKET_URL, {
+const socket = io(process.env.NEXT_PUBLIC_APP_URL || '', {
   autoConnect: false,
-  transports: ['websocket'],
+  path: '/api/socketio'
 })
 
 export async function initializeChat(roomId: string) {
@@ -38,3 +36,5 @@ export function subscribeToMessages(callback: (message: any) => void) {
   socket.on('message', callback)
   return () => socket.off('message', callback)
 }
+
+export default socket
