@@ -3,15 +3,35 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
-import { createNotification } from "@/lib/notifications"
+import { format } from "date-fns"
+import {
+  Users,
+  FolderKanban,
+  UserPlus,
+  Settings,
+  Mail,
+  Phone,
+  Calendar,
+  Shield,
+  AlertCircle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Loader2
+} from "lucide-react"
 import { ProjectHeader } from "./components/project-header"
 import { ProjectInfo } from "./components/project-info"
 import { ProjectComments } from "./components/project-comments"
 import ProjectAttachments from "./components/project-attachments"
 import ProjectTasks from "./components/project-tasks"
-import { Loader2 } from "lucide-react"
+import { ChatWindow } from "@/components/chat/chat-window"
+import { createNotification } from "@/lib/notifications"
 
 export default function ProjectDetailsPage() {
   const params = useParams()
@@ -23,6 +43,7 @@ export default function ProjectDetailsPage() {
   const [userRole, setUserRole] = useState<{ name: string; level: number } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [chatRoom, setChatRoom] = useState<{ id: string } | null>(null)
   const supabase = createClient()
 
   useEffect(() => {
@@ -101,6 +122,31 @@ export default function ProjectDetailsPage() {
         }
 
         setProject(projectData)
+
+        // Fetch or create chat room
+        const { data: existingRoom } = await supabase
+          .from("chat_rooms")
+          .select("id")
+          .eq("project_id", params.id)
+          .single()
+
+        if (existingRoom) {
+          setChatRoom(existingRoom)
+        } else {
+          const { data: newRoom } = await supabase
+            .from("chat_rooms")
+            .insert({
+              project_id: params.id,
+              name: `Chat do Projeto: ${projectData.name}`,
+              type: "project"
+            })
+            .select()
+            .single()
+
+          if (newRoom) {
+            setChatRoom(newRoom)
+          }
+        }
 
         // Fetch comments
         const { data: commentsData } = await supabase
@@ -295,6 +341,7 @@ export default function ProjectDetailsPage() {
             <TabsList>
               <TabsTrigger value="overview">Visão Geral</TabsTrigger>
               <TabsTrigger value="tasks">Tarefas</TabsTrigger>
+              <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="comments">Comentários</TabsTrigger>
               <TabsTrigger value="attachments">Anexos</TabsTrigger>
             </TabsList>
@@ -317,6 +364,12 @@ export default function ProjectDetailsPage() {
 
             <TabsContent value="tasks">
               <ProjectTasks projectId={project.id} canEdit={canEdit} />
+            </TabsContent>
+
+            <TabsContent value="chat">
+              {chatRoom && (
+                <ChatWindow projectId={project.id} roomId={chatRoom.id} />
+              )}
             </TabsContent>
 
             <TabsContent value="comments">

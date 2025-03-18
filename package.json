@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
     "@hookform/resolvers": "^3.9.0",
     "@mercadopago/sdk-react": "^0.0.18",
     "@next/swc-wasm-nodejs": "13.5.1",
@@ -55,12 +57,14 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
+    "emoji-mart": "^5.5.2",
     "encoding": "^0.1.13",
     "eslint": "8.49.0",
     "eslint-config-next": "13.5.1",
     "framer-motion": "^11.0.14",
     "input-otp": "^1.2.4",
     "lucide-react": "^0.446.0",
+    "marked": "^12.0.1",
     "mercadopago": "^2.2.0",
     "next": "13.5.1",
     "next-themes": "^0.3.0",
