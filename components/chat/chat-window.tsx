@@ -311,9 +311,15 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
               <div className="flex items-start gap-2">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium">
-                      {message.user_id === currentUserId ? "Você" : message.profiles?.full_name}
-                    </span>
+                    {(() => {
+                      console.log(message)
+                      const userName = message.user_id === currentUserId ? "Você" : message.profiles?.full_name;
+                      return (
+                        <span className="font-medium">
+                          {userName}
+                        </span>
+                      );
+                    })()}
                     {renderUserBadge(message)}
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(message.created_at), 'HH:mm')}
