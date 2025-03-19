@@ -47,6 +47,9 @@ export function UserPresenceList({ projectId }: UserPresenceListProps) {
             projectOwnerResult.data[0]?.user_id,  // ID do dono do projeto
             ...teamMembersResult.data.map(member => member.user_id)  // IDs dos membros da equipe
           ]
+          
+          // Filtra os valores null ou undefined da lista de IDs
+          const validUserIds = userIds.filter(id => id != null) 
       
           // Buscar as presenças usando os IDs obtidos
           const { data } = await supabase
@@ -57,7 +60,7 @@ export function UserPresenceList({ projectId }: UserPresenceListProps) {
                 full_name
               )
             `)
-            .in('user_id', userIds)
+            .in('user_id', validUserIds)
       
           if (data) {
             setPresences(data)
