@@ -63,7 +63,10 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
         .order('created_at', { ascending: true })
 
       if (data) {
-        setMessages(data)
+        setMessages(data.map((message: any) => ({
+          ...message,
+          profiles: message.profiles[0]
+        })))
         scrollToBottom()
       }
       setIsLoading(false)
