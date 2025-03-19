@@ -63,7 +63,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           .eq('id', projectId)
           .single()
 
-        const { data } = await supabase
+          const { data } = await supabase
           .from('chat_messages')
           .select(`
             id,
@@ -78,26 +78,30 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           `)
           .eq('room_id', roomId)
           .order('created_at', { ascending: true })
-
+        
         if (data) {
           const messagesWithRoles = await Promise.all(data.map(async (message) => {
+            // Verifica se a mensagem é do cliente (proprietário do projeto)
             if (project && message.user_id === project.user_id) {
-              return { ...message, is_client: true, profiles: message.profiles[0] }
+              return { ...message, is_client: true, profiles: message.profiles ? message.profiles[0] : null }
             }
-
+        
+            // Busca o membro da equipe (se houver), usa maybeSingle() para garantir que não falhe
             const { data: teamMember } = await supabase
               .from('team_members')
               .select('roles(name)')
               .eq('user_id', message.user_id)
               .eq('status', 'active')
               .maybeSingle()
-
-            return { ...message, role: teamMember?.roles[0], profiles: message.profiles[0] }
+        
+            // Se não houver role, retorna a mensagem sem o campo `role`
+            const role = teamMember?.roles?.[0] ?? null; // Verifica se existe, se não, atribui null
+            return { ...message, role, profiles: message.profiles ? message.profiles[0] : null }
           }))
-
+        
           setMessages(messagesWithRoles)
           scrollToBottom()
-        }
+        }        
         setIsLoading(false)
       } catch (error) {
         console.error('Error fetching messages:', error)
