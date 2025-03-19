@@ -25,16 +25,16 @@ export function UserPresenceList({ projectId }: UserPresenceListProps) {
   useEffect(() => {
     const fetchPresences = async () => {
         try {
-          // Obter os IDs do dono do projeto e dos membros da equipe
+          // Obter os IDs do dono do projeto
           const projectOwnerQuery = supabase
             .from('projects')
             .select('user_id')
             .eq('id', projectId)
-          
+      
+          // Obter os IDs dos membros da equipe (assumindo que a relação é via user_id)
           const teamMembersQuery = supabase
             .from('team_members')
-            .select('user_id')
-            .eq('project_id', projectId)
+            .select('user_id')  // Agora filtrando apenas os user_ids dos membros
       
           // Espera pelas duas consultas
           const [projectOwnerResult, teamMembersResult] = await Promise.all([
@@ -65,7 +65,7 @@ export function UserPresenceList({ projectId }: UserPresenceListProps) {
         } catch (error) {
           console.error('Erro ao buscar as presenças:', error)
         }
-    }      
+      }               
 
     fetchPresences()
 
