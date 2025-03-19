@@ -15,6 +15,7 @@ import Picker from '@emoji-mart/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 interface Message {
+  userName: any
   id: string
   content: string
   type: string
@@ -23,7 +24,7 @@ interface Message {
   user_id: string
   profiles: {
     full_name: string
-  }
+  }[]
   role?: {
     name: string
   }
@@ -54,123 +55,132 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
     fetchCurrentUser()
   }, [supabase])
 
-  useEffect(() => {
-    const fetchMessages = async () => {
-      try {
-        const { data: project } = await supabase
-          .from('projects')
-          .select('user_id')
-          .eq('id', projectId)
-          .single()
-
-          const { data } = await supabase
-          .from('chat_messages')
-          .select(`
-            id,
-            content,
-            type,
-            metadata,
-            created_at,
-            user_id,
-            profiles!chat_messages_user_id_fkey1 (
-              full_name
-            )
-          `)
-          .eq('room_id', roomId)
-          .order('created_at', { ascending: true })
-        
-        if (data) {
-          const messagesWithRoles = await Promise.all(data.map(async (message) => {
-            // Verifica se a mensagem é do cliente (proprietário do projeto)
-            if (project && message.user_id === project.user_id) {
-              return { ...message, is_client: true, profiles: message.profiles ? message.profiles[0] : null }
+  const fetchMessages = async () => {
+    try {
+      const { data: project } = await supabase
+        .from('projects')
+        .select('user_id')
+        .eq('id', projectId)
+        .single()
+  
+      const { data } = await supabase
+        .from('chat_messages')
+        .select(`
+          id,
+          content,
+          type,
+          metadata,
+          created_at,
+          user_id,
+          profiles!chat_messages_user_id_fkey1 (
+            full_name
+          )
+        `)
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true })
+  
+      if (data) {
+        const messagesWithRoles = await Promise.all(data.map(async (message) => {
+          // Verifica se a mensagem é do cliente (proprietário do projeto)
+          if (project && message.user_id === project.user_id) {
+            return { 
+              ...message, 
+              is_client: true, 
+              userName: message.profiles[0]?.full_name || null 
             }
-        
-            // Busca o membro da equipe (se houver), usa maybeSingle() para garantir que não falhe
+          }
+  
+          // Busca a role do membro da equipe (se houver), usa maybeSingle() para garantir que não falhe
+          const { data: teamMember } = await supabase
+            .from('team_members')
+            .select('roles(name)')
+            .eq('user_id', message.user_id)
+            .eq('status', 'active')
+            .maybeSingle()
+  
+          const role = teamMember?.roles?.[0] ?? null; // Atribui null se não houver role
+          return { 
+            ...message, 
+            role, 
+            userName: message.profiles[0]?.full_name || null 
+          }
+        }))
+  
+        setMessages(messagesWithRoles)
+        scrollToBottom()
+      }
+  
+      setIsLoading(false)
+    } catch (error) {
+      console.error('Error fetching messages:', error)
+      setIsLoading(false)
+    }
+  }
+  
+  const initialize = async () => {
+    try {
+      const cleanup = await initializeChat(roomId)
+  
+      const unsubscribe = subscribeToMessages(async (message) => {
+        if (message.room_id === roomId) {
+          const { data: fullMessage } = await supabase
+            .from('chat_messages')
+            .select(`
+              id,
+              content,
+              type,
+              metadata,
+              created_at,
+              user_id,
+              profiles!chat_messages_user_id_fkey1 (
+                full_name
+              )
+            `)
+            .eq('id', message.id)
+            .single()
+  
+          if (fullMessage) {
             const { data: teamMember } = await supabase
               .from('team_members')
               .select('roles(name)')
-              .eq('user_id', message.user_id)
+              .eq('user_id', fullMessage.user_id)
               .eq('status', 'active')
               .maybeSingle()
-        
-            // Se não houver role, retorna a mensagem sem o campo `role`
-            const role = teamMember?.roles?.[0] ?? null; // Verifica se existe, se não, atribui null
-            return { ...message, role, profiles: message.profiles ? message.profiles[0] : null }
-          }))
-        
-          setMessages(messagesWithRoles)
-          scrollToBottom()
-        }        
-        setIsLoading(false)
-      } catch (error) {
-        console.error('Error fetching messages:', error)
-        setIsLoading(false)
-      }
-    }
-
-    const initialize = async () => {
-      try {
-        const cleanup = await initializeChat(roomId)
-        const unsubscribe = subscribeToMessages(async (message) => {
-          if (message.room_id === roomId) {
-            const { data: fullMessage } = await supabase
-              .from('chat_messages')
-              .select(`
-                id,
-                content,
-                type,
-                metadata,
-                created_at,
-                user_id,
-                profiles!chat_messages_user_id_fkey1 (
-                  full_name
-                )
-              `)
-              .eq('id', message.id)
+  
+            const { data: project } = await supabase
+              .from('projects')
+              .select('user_id')
+              .eq('id', projectId)
               .single()
-
-            if (fullMessage) {
-              const { data: teamMember } = await supabase
-                .from('team_members')
-                .select('roles(name)')
-                .eq('user_id', fullMessage.user_id)
-                .eq('status', 'active')
-                .maybeSingle()
-
-              const { data: project } = await supabase
-                .from('projects')
-                .select('user_id')
-                .eq('id', projectId)
-                .single()
-
-              const messageWithRole = {
-                ...fullMessage,
-                role: teamMember?.roles[0],
-                is_client: project?.user_id === fullMessage.user_id,
-                profiles: fullMessage.profiles[0]
-              }
-
-              setMessages(prev => [...prev, messageWithRole as Message])
-              scrollToBottom()
-            }
+  
+            const messageWithRole = {
+              ...fullMessage,
+              role: teamMember?.roles?.[0] ?? null,
+              is_client: project?.user_id === fullMessage.user_id,
+              userName: fullMessage.profiles[0].full_name
+            } as unknown as Message
+  
+            setMessages(prev => [...prev, messageWithRole])
+            scrollToBottom()
           }
-        })
-
-        fetchMessages()
-
-        return () => {
-          cleanup?.()
-          unsubscribe()
         }
-      } catch (error) {
-        console.error('Error initializing chat:', error)
+      })
+  
+      fetchMessages()
+  
+      return () => {
+        cleanup?.()
+        unsubscribe()
       }
+    } catch (error) {
+      console.error('Error initializing chat:', error)
     }
-
+  }
+  
+  useEffect(() => {
     initialize()
   }, [roomId, projectId, supabase])
-
+  
   const scrollToBottom = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -313,7 +323,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
                   <div className="flex items-center gap-2 mb-1">
                     {(() => {
                       console.log(message)
-                      const userName = message.user_id === currentUserId ? "Você" : message.profiles?.full_name;
+                      const userName = message.user_id === currentUserId ? "Você" : message.userName;
                       return (
                         <span className="font-medium">
                           {userName}
