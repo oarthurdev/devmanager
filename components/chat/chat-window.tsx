@@ -49,6 +49,44 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
   const typingTimeoutRef = useRef<NodeJS.Timeout>()
   const supabase = createClient()
 
+  const channel = supabase.channel(`typing:${roomId}`)
+  
+  useEffect(() => {
+    const initializeChannel = async () => {
+      // Primeiro, subscreve o canal
+      await channel.subscribe()
+  
+      // Depois, faz o track do estado inicial da presença (se já estiver digitando)
+      await channel.track({ isTyping: false })
+  
+      // Agora, você pode adicionar os listeners para os eventos de presença
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const newState = channel.presenceState()
+          const typing = new Set(
+            Object.values(newState)
+              .flat()
+              .filter((p: any) => p.isTyping)
+              .map((p: any) => p.username)
+          )
+          setTypingUsers(typing)
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            // Defina o estado de 'isTyping' para falso após a subscrição
+            setIsTyping(false)
+          }
+        })
+    }
+  
+    initializeChannel()
+  
+    // Cleanup: Desinscreve do canal quando o componente for desmontado
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [roomId, supabase])
+
   useEffect(() => {
     const fetchCurrentUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -169,33 +207,11 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
         }
       })
 
-      // Subscribe to typing indicators
-      const channel = supabase.channel(`typing:${roomId}`)
-  
-      channel
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            // Primeiro, faça o track de presença após a subscrição
-            await channel.track({ isTyping: false })
-          }
-        })
-        .on('presence', { event: 'sync' }, () => {
-          const newState = channel.presenceState()
-          const typing = new Set(
-            Object.values(newState)
-              .flat()
-              .filter((p: any) => p.isTyping)
-              .map((p: any) => p.username)
-          )
-          setTypingUsers(typing)
-        })
-  
       fetchMessages()
   
       return () => {
         cleanup?.()
         unsubscribe()
-        channel.unsubscribe()
       }
     } catch (error) {
       console.error('Error initializing chat:', error)
@@ -343,7 +359,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
     return (
       <div className="prose prose-sm max-w-none dark:prose-invert">
         <Linkify options={{ target: '_blank' }}>
-          {marked(message.content)}
+          <div dangerouslySetInnerHTML={{ __html: marked(message.content) }} />
         </Linkify>
       </div>
     )
@@ -404,7 +420,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     {(() => {
-                      const userName = message.user_id === currentUserId ? "Você" : message.profiles[0]?.full_name
+                      const userName = message.user_id === currentUserId ? "Você" : message.profiles?.full_name
                       return (
                         <span className="font-medium">
                           {userName}
