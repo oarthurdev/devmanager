@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { createClient } from '@/lib/supabase/client'
 import { initializeChat, sendMessage, subscribeToMessages } from '@/lib/chat/socket'
 import { format } from 'date-fns'
-import { Send, Paperclip, Smile, Image, FileText } from 'lucide-react'
+import { Send, Paperclip, Smile, Image, FileText, User, Shield } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { marked } from 'marked'
 import data from '@emoji-mart/data'
@@ -19,10 +20,14 @@ interface Message {
   type: string
   metadata: any
   created_at: string
+  user_id: string
   profiles: {
-    id: string
     full_name: string
   }
+  role?: {
+    name: string
+  }
+  is_client?: boolean
 }
 
 interface ChatWindowProps {
@@ -34,18 +39,30 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
 
-  const getCurrentUser = async () => {
-    const user = supabase.auth.getUser()
-    return user
-  }
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+      }
+    }
 
-  const [currentUser, setCurrentUser] = useState<any>(null);
+    fetchCurrentUser()
+  }, [supabase])
 
   useEffect(() => {
     const fetchMessages = async () => {
+      // First, get the project owner's ID
+      const { data: project } = await supabase
+        .from('projects')
+        .select('user_id')
+        .eq('id', projectId)
+        .single()
+
       const { data } = await supabase
         .from('chat_messages')
         .select(`
@@ -54,8 +71,8 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           type,
           metadata,
           created_at,
-          profiles:profiles (
-            id,
+          user_id,
+          profiles!chat_messages_user_id_fkey (
             full_name
           )
         `)
@@ -63,27 +80,84 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
         .order('created_at', { ascending: true })
 
       if (data) {
-        setMessages(data.map((message: any) => ({
-          ...message,
-          profiles: message.profiles[0]
-        })))
+        // For each message, check if the user is a team member and get their role
+        const messagesWithRoles = await Promise.all(data.map(async (message) => {
+          // Check if the message sender is the project owner (client)
+          if (project && message.user_id === project.user_id) {
+            return { ...message, is_client: true }
+          }
+
+          // Check if the message sender is a team member
+          const { data: teamMember } = await supabase
+            .from('team_members')
+            .select(`
+              roles (
+                name
+              )
+            `)
+            .eq('user_id', message.user_id)
+            .eq('status', 'active')
+            .single()
+
+          return { ...message, role: teamMember?.roles }
+        }))
+
+        setMessages(messagesWithRoles)
         scrollToBottom()
       }
       setIsLoading(false)
     }
 
     const initialize = async () => {
-      const user = getCurrentUser();
-
-      setCurrentUser(user);
-
-      console.log(currentUser);
-      
       const cleanup = await initializeChat(roomId)
-      const unsubscribe = subscribeToMessages((message) => {
+      const unsubscribe = subscribeToMessages(async (message) => {
         if (message.room_id === roomId) {
-          setMessages(prev => [...prev, message])
-          scrollToBottom()
+          // Fetch the complete message with profile info
+          const { data: fullMessage } = await supabase
+            .from('chat_messages')
+            .select(`
+              id,
+              content,
+              type,
+              metadata,
+              created_at,
+              user_id,
+              profiles!chat_messages_user_id_fkey (
+                full_name
+              )
+            `)
+            .eq('id', message.id)
+            .single()
+
+          if (fullMessage) {
+            // Get the user's role if they're a team member
+            const { data: teamMember } = await supabase
+              .from('team_members')
+              .select(`
+                roles (
+                  name
+                )
+              `)
+              .eq('user_id', fullMessage.user_id)
+              .eq('status', 'active')
+              .single()
+
+            // Check if the user is the project owner
+            const { data: project } = await supabase
+              .from('projects')
+              .select('user_id')
+              .eq('id', projectId)
+              .single()
+
+            const messageWithRole = {
+              ...fullMessage,
+              role: teamMember?.roles,
+              is_client: project?.user_id === fullMessage.user_id
+            }
+
+            setMessages(prev => [...prev, messageWithRole])
+            scrollToBottom()
+          }
         }
       })
 
@@ -96,7 +170,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
     }
 
     initialize()
-  }, [roomId, supabase])
+  }, [roomId, projectId, supabase])
 
   const scrollToBottom = () => {
     if (scrollRef.current) {
@@ -106,21 +180,6 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
 
   const handleSend = async () => {
     if (!newMessage.trim()) return
-
-    const newMessageObject: Message = {
-      id: Date.now().toString(),
-      content: newMessage,
-      type: 'text',
-      metadata: {},
-      created_at: new Date().toISOString(),
-      profiles: {
-        id: currentUser?.id || '',
-        full_name: 'Você'
-      }
-    }
-    setMessages(prev => [...prev, newMessageObject]);
-
-    scrollToBottom();
 
     try {
       await sendMessage(roomId, newMessage)
@@ -199,6 +258,28 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
     )
   }
 
+  const renderUserBadge = (message: Message) => {
+    if (message.is_client) {
+      return (
+        <Badge variant="outline" className="ml-2 flex items-center gap-1">
+          <User className="w-3 h-3" />
+          Cliente
+        </Badge>
+      )
+    }
+
+    if (message.role?.name) {
+      return (
+        <Badge variant="outline" className="ml-2 flex items-center gap-1">
+          <Shield className="w-3 h-3" />
+          {message.role.name}
+        </Badge>
+      )
+    }
+
+    return null
+  }
+
   if (isLoading) {
     return (
       <Card className="p-4">
@@ -232,8 +313,9 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-medium">
-                      {message.profiles.id === currentUser?.id ? "Você" : message.profiles.full_name}
+                      {message.user_id === currentUserId ? "Você" : message.profiles?.full_name}
                     </span>
+                    {renderUserBadge(message)}
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(message.created_at), 'HH:mm')}
                     </span>

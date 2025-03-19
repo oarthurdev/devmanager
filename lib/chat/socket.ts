@@ -44,7 +44,8 @@ export async function sendMessage(roomId: string, content: string, type: string 
         type,
         metadata,
         created_at,
-        profiles (
+        user_id,
+        profiles!chat_messages_user_id_fkey (
           full_name
         )
       `)
