@@ -171,8 +171,14 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
 
       // Subscribe to typing indicators
       const channel = supabase.channel(`typing:${roomId}`)
-      
+  
       channel
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            // Primeiro, faça o track de presença após a subscrição
+            await channel.track({ isTyping: false })
+          }
+        })
         .on('presence', { event: 'sync' }, () => {
           const newState = channel.presenceState()
           const typing = new Set(
@@ -182,11 +188,6 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
               .map((p: any) => p.username)
           )
           setTypingUsers(typing)
-        })
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            await channel.track({ isTyping: false })
-          }
         })
   
       fetchMessages()
