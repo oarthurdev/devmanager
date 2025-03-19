@@ -90,7 +90,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
               .select('roles(name)')
               .eq('user_id', message.user_id)
               .eq('status', 'active')
-              .single()
+              .maybeSingle()
 
             return { ...message, role: teamMember?.roles[0], profiles: message.profiles[0] }
           }))
@@ -132,7 +132,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
                 .select('roles(name)')
                 .eq('user_id', fullMessage.user_id)
                 .eq('status', 'active')
-                .single()
+                .maybeSingle()
 
               const { data: project } = await supabase
                 .from('projects')
