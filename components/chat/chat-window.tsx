@@ -20,6 +20,7 @@ interface Message {
   metadata: any
   created_at: string
   profiles: {
+    id: string
     full_name: string
   }
 }
@@ -36,6 +37,13 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const supabase = createClient()
 
+  const getCurrentUser = async () => {
+    const user = supabase.auth.getUser()
+    return user
+  }
+
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
   useEffect(() => {
     const fetchMessages = async () => {
       const { data } = await supabase
@@ -47,6 +55,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           metadata,
           created_at,
           profiles (
+            id,
             full_name
           )
         `)
@@ -61,6 +70,10 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
     }
 
     const initialize = async () => {
+      const user = getCurrentUser();
+
+      setCurrentUser(user);
+
       const cleanup = await initializeChat(roomId)
       const unsubscribe = subscribeToMessages((message) => {
         if (message.room_id === roomId) {
@@ -96,6 +109,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
       metadata: {},
       created_at: new Date().toISOString(),
       profiles: {
+        id: currentUser?.id || '',
         full_name: 'Você'
       }
     }
@@ -213,7 +227,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-medium">
-                      {message.profiles.full_name}
+                      {message.profiles.id === currentUser?.id ? "Você" : message.profiles.full_name}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {format(new Date(message.created_at), 'HH:mm')}
