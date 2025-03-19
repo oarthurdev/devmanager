@@ -89,6 +89,20 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
   const handleSend = async () => {
     if (!newMessage.trim()) return
 
+    const newMessageObject: Message = {
+      id: Date.now().toString(),
+      content: newMessage,
+      type: 'text',
+      metadata: {},
+      created_at: new Date().toISOString(),
+      profiles: {
+        full_name: 'Você'
+      }
+    }
+    setMessages(prev => [...prev, newMessageObject]);
+
+    scrollToBottom();
+
     try {
       await sendMessage(roomId, newMessage)
       setNewMessage('')
