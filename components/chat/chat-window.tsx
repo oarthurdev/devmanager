@@ -54,7 +54,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           type,
           metadata,
           created_at,
-          profiles (
+          profiles:profiles (
             id,
             full_name
           )
