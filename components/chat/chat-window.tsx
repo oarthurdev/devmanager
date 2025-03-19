@@ -72,7 +72,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           metadata,
           created_at,
           user_id,
-          profiles!chat_messages_user_id_fkey (
+          profiles!chat_messages_user_id_fkey1 (
             full_name
           )
         `)
