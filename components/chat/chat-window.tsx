@@ -71,12 +71,6 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           )
           setTypingUsers(typing)
         })
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            // Defina o estado de 'isTyping' para falso após a subscrição
-            setIsTyping(false)
-          }
-        })
     }
   
     initializeChannel()
