@@ -7,14 +7,20 @@ export async function updatePresence(status: 'online' | 'offline') {
   if (!user) return
 
   try {
-    await supabase
+    const { data, error } = await supabase
       .from('user_presence')
-      .upsert({
-        user_id: user.id,
-        status,
-        last_seen: new Date().toISOString(),
-        metadata: {}
-      })
+      .upsert([
+        {
+          user_id: user.id,
+          status: status,
+          last_seen: new Date().toISOString(),
+          metadata: {}
+        }
+      ], { onConflict: 'user_id' }) // Garante que, se já existir, o registro será atualizado com base no user_id
+
+    if (error) {
+      throw error
+    }
   } catch (error) {
     console.error('Error updating presence:', error)
   }
