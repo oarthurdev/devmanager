@@ -190,6 +190,20 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
   const handleSend = async () => {
     if (!newMessage.trim()) return
 
+    const newMessageData: Message = {
+      id: `${Date.now()}`, // Gerar um ID único temporário para a nova mensagem
+      content: newMessage,
+      type: 'text', // ou outro tipo conforme a lógica do seu sistema
+      metadata: {},
+      created_at: new Date().toISOString(),
+      user_id: currentUserId || '', // Adiciona o user_id do usuário atual
+      userName: "Você", // Ou o nome do usuário atual
+      profiles: [{ full_name: "Você" }], // Ou o nome do usuário atual
+    };
+  
+    setMessages(prev => [...prev, newMessageData]);
+    scrollToBottom(); // Rolar para o fundo
+
     try {
       await sendMessage(roomId, newMessage)
       setNewMessage('')
