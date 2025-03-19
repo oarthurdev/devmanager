@@ -15,6 +15,7 @@ import Picker from '@emoji-mart/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Linkify from 'linkify-react'
 import GiphyPicker from '@/components/chat/giphy-picker'
+import { initializePresence } from '@/lib/presence'
 
 interface Message {
   userName: any
@@ -50,6 +51,14 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
   const supabase = createClient()
 
   const channel = supabase.channel(`typing:${roomId}`)
+
+  useEffect(() => {
+    const initialize = async () => {
+      const cleanup = await initializePresence()
+      return () => cleanup()
+    }
+    initialize()
+  }, [])
   
   useEffect(() => {
     const initializeChannel = async () => {

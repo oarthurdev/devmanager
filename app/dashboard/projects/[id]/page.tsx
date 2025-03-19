@@ -3,34 +3,17 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createClient } from "@/lib/supabase/client"
-import { format } from "date-fns"
-import {
-  Users,
-  FolderKanban,
-  UserPlus,
-  Settings,
-  Mail,
-  Phone,
-  Calendar,
-  Shield,
-  AlertCircle,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Loader2
-} from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { ProjectHeader } from "./components/project-header"
 import { ProjectInfo } from "./components/project-info"
 import { ProjectComments } from "./components/project-comments"
 import ProjectAttachments from "./components/project-attachments"
 import ProjectTasks from "./components/project-tasks"
 import { ChatWindow } from "@/components/chat/chat-window"
+import { UserPresenceList } from "@/components/chat/user-presence"
+import { ActivityTimeline } from "@/components/project/activity-timeline"
 import { createNotification } from "@/lib/notifications"
 
 export default function ProjectDetailsPage() {
@@ -344,6 +327,7 @@ export default function ProjectDetailsPage() {
               <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="comments">Comentários</TabsTrigger>
               <TabsTrigger value="attachments">Anexos</TabsTrigger>
+              <TabsTrigger value="timeline">Timeline</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
@@ -367,9 +351,16 @@ export default function ProjectDetailsPage() {
             </TabsContent>
 
             <TabsContent value="chat">
-              {chatRoom && (
-                <ChatWindow projectId={project.id} roomId={chatRoom.id} />
-              )}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="col-span-3">
+                  {chatRoom && (
+                    <ChatWindow projectId={project.id} roomId={chatRoom.id} />
+                  )}
+                </div>
+                <div>
+                  <UserPresenceList projectId={project.id} />
+                </div>
+              </div>
             </TabsContent>
 
             <TabsContent value="comments">
@@ -382,6 +373,10 @@ export default function ProjectDetailsPage() {
 
             <TabsContent value="attachments">
               <ProjectAttachments projectId={project.id} canEdit={canEdit} />
+            </TabsContent>
+
+            <TabsContent value="timeline">
+              <ActivityTimeline projectId={project.id} />
             </TabsContent>
           </Tabs>
         </Card>
