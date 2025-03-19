@@ -323,7 +323,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
                   <div className="flex items-center gap-2 mb-1">
                     {(() => {
                       console.log(message)
-                      const userName = message.user_id === currentUserId ? "Você" : message.profiles[0].full_name;
+                      const userName = message.user_id === currentUserId ? "Você" : message.profiles?.full_name;
                       return (
                         <span className="font-medium">
                           {userName}
