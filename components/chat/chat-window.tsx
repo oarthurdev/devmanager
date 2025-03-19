@@ -13,6 +13,8 @@ import { marked } from 'marked'
 import data from '@emoji-mart/data'
 import Picker from '@emoji-mart/react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import Linkify from 'linkify-react'
+import GiphyPicker from '@/components/chat/giphy-picker'
 
 interface Message {
   userName: any
@@ -41,7 +43,10 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
   const [newMessage, setNewMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set())
+  const [isTyping, setIsTyping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const typingTimeoutRef = useRef<NodeJS.Timeout>()
   const supabase = createClient()
 
   useEffect(() => {
@@ -81,7 +86,6 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
   
       if (data) {
         const messagesWithRoles = await Promise.all(data.map(async (message) => {
-          // Verifica se a mensagem é do cliente (proprietário do projeto)
           if (project && message.user_id === project.user_id) {
             return { 
               ...message, 
@@ -90,7 +94,6 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
             }
           }
   
-          // Busca a role do membro da equipe (se houver), usa maybeSingle() para garantir que não falhe
           const { data: teamMember } = await supabase
             .from('team_members')
             .select('roles(name)')
@@ -98,7 +101,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
             .eq('status', 'active')
             .maybeSingle()
   
-          const role = teamMember?.roles?.[0] ?? null; // Atribui null se não houver role
+          const role = teamMember?.roles?.[0] ?? null
           return { 
             ...message, 
             role, 
@@ -116,7 +119,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
       setIsLoading(false)
     }
   }
-  
+
   const initialize = async () => {
     try {
       const cleanup = await initializeChat(roomId)
@@ -165,12 +168,33 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           }
         }
       })
+
+      // Subscribe to typing indicators
+      const channel = supabase.channel(`typing:${roomId}`)
+      
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const newState = channel.presenceState()
+          const typing = new Set(
+            Object.values(newState)
+              .flat()
+              .filter((p: any) => p.isTyping)
+              .map((p: any) => p.username)
+          )
+          setTypingUsers(typing)
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await channel.track({ isTyping: false })
+          }
+        })
   
       fetchMessages()
   
       return () => {
         cleanup?.()
         unsubscribe()
+        channel.unsubscribe()
       }
     } catch (error) {
       console.error('Error initializing chat:', error)
@@ -187,26 +211,47 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
     }
   }
 
+  const handleTyping = async () => {
+    if (!isTyping) {
+      setIsTyping(true)
+      const channel = supabase.channel(`typing:${roomId}`)
+      await channel.track({ isTyping: true })
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
+    }
+
+    typingTimeoutRef.current = setTimeout(async () => {
+      setIsTyping(false)
+      const channel = supabase.channel(`typing:${roomId}`)
+      await channel.track({ isTyping: false })
+    }, 2000)
+  }
+
   const handleSend = async () => {
     if (!newMessage.trim()) return
 
     const newMessageData: Message = {
-      id: `${Date.now()}`, // Gerar um ID único temporário para a nova mensagem
+      id: `${Date.now()}`,
       content: newMessage,
-      type: 'text', // ou outro tipo conforme a lógica do seu sistema
+      type: 'text',
       metadata: {},
       created_at: new Date().toISOString(),
-      user_id: currentUserId || '', // Adiciona o user_id do usuário atual
-      userName: "Você", // Ou o nome do usuário atual
-      profiles: [{ full_name: "Você" }], // Ou o nome do usuário atual
-    };
+      user_id: currentUserId || '',
+      userName: "Você",
+      profiles: [{ full_name: "Você" }],
+    }
   
-    setMessages(prev => [...prev, newMessageData]);
-    scrollToBottom(); // Rolar para o fundo
+    setMessages(prev => [...prev, newMessageData])
+    scrollToBottom()
 
     try {
       await sendMessage(roomId, newMessage)
       setNewMessage('')
+      setIsTyping(false)
+      const channel = supabase.channel(`typing:${roomId}`)
+      await channel.track({ isTyping: false })
     } catch (error) {
       console.error('Error sending message:', error)
     }
@@ -221,6 +266,17 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
 
   const handleEmojiSelect = (emoji: any) => {
     setNewMessage(prev => prev + emoji.native)
+  }
+
+  const handleGifSelect = async (gif: any) => {
+    try {
+      await sendMessage(roomId, '', 'gif', {
+        url: gif.images.original.url,
+        title: gif.title
+      })
+    } catch (error) {
+      console.error('Error sending GIF:', error)
+    }
   }
 
   const handleFileUpload = async (files: FileList) => {
@@ -273,11 +329,22 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
       )
     }
 
+    if (message.type === 'gif') {
+      return (
+        <img
+          src={message.metadata.url}
+          alt={message.metadata.title}
+          className="max-w-sm rounded-lg"
+        />
+      )
+    }
+
     return (
-      <div
-        className="prose prose-sm max-w-none dark:prose-invert"
-        dangerouslySetInnerHTML={{ __html: marked(message.content) }}
-      />
+      <div className="prose prose-sm max-w-none dark:prose-invert">
+        <Linkify options={{ target: '_blank' }}>
+          {marked(message.content)}
+        </Linkify>
+      </div>
     )
   }
 
@@ -336,13 +403,12 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     {(() => {
-                      console.log(message)
-                      const userName = message.user_id === currentUserId ? "Você" : message.profiles?.full_name;
+                      const userName = message.user_id === currentUserId ? "Você" : message.profiles[0]?.full_name
                       return (
                         <span className="font-medium">
                           {userName}
                         </span>
-                      );
+                      )
                     })()}
                     {renderUserBadge(message)}
                     <span className="text-xs text-muted-foreground">
@@ -355,6 +421,12 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
             </motion.div>
           ))}
         </AnimatePresence>
+
+        {typingUsers.size > 0 && (
+          <div className="text-sm text-muted-foreground italic">
+            {Array.from(typingUsers).join(', ')} {typingUsers.size === 1 ? 'está' : 'estão'} digitando...
+          </div>
+        )}
       </ScrollArea>
 
       <div className="p-4 border-t">
@@ -362,7 +434,10 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
           <div className="flex-1">
             <Textarea
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={(e) => {
+                setNewMessage(e.target.value)
+                handleTyping()
+              }}
               onKeyPress={handleKeyPress}
               placeholder="Digite sua mensagem... (Markdown suportado)"
               className="min-h-[80px]"
@@ -402,6 +477,7 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
                   />
                 </PopoverContent>
               </Popover>
+              <GiphyPicker onSelect={handleGifSelect} />
             </div>
           </div>
           <Button

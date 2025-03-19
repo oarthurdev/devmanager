@@ -63,7 +63,10 @@
     "eslint": "8.49.0",
     "eslint-config-next": "13.5.1",
     "framer-motion": "^11.0.14",
+    "giphy-api": "^2.0.2",
     "input-otp": "^1.2.4",
+    "linkify-react": "^4.2.0",
+    "linkifyjs": "^4.2.0",
     "lucide-react": "^0.446.0",
     "marked": "^12.0.1",
     "mercadopago": "^2.2.0",
@@ -90,9 +93,11 @@
     "utf-8-validate": "^6.0.5",
     "uuid": "^11.1.0",
     "vaul": "^0.9.9",
+    "web-push": "^3.6.7",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/socket.io": "^3.0.2"
+    "@types/socket.io": "^3.0.2",
+    "@types/web-push": "^3.6.3"
   }
 }
