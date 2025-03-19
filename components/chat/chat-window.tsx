@@ -56,116 +56,111 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
 
   useEffect(() => {
     const fetchMessages = async () => {
-      // First, get the project owner's ID
-      const { data: project } = await supabase
-        .from('projects')
-        .select('user_id')
-        .eq('id', projectId)
-        .single()
+      try {
+        const { data: project } = await supabase
+          .from('projects')
+          .select('user_id')
+          .eq('id', projectId)
+          .single()
 
-      const { data } = await supabase
-        .from('chat_messages')
-        .select(`
-          id,
-          content,
-          type,
-          metadata,
-          created_at,
-          user_id,
-          profiles!chat_messages_user_id_fkey1 (
-            full_name
-          )
-        `)
-        .eq('room_id', roomId)
-        .order('created_at', { ascending: true })
+        const { data } = await supabase
+          .from('chat_messages')
+          .select(`
+            id,
+            content,
+            type,
+            metadata,
+            created_at,
+            user_id,
+            profiles!chat_messages_user_id_fkey1 (
+              full_name
+            )
+          `)
+          .eq('room_id', roomId)
+          .order('created_at', { ascending: true })
 
-      if (data) {
-        // For each message, check if the user is a team member and get their role
-        const messagesWithRoles = await Promise.all(data.map(async (message) => {
-          // Check if the message sender is the project owner (client)
-          if (project && message.user_id === project.user_id) {
-            return { ...message, is_client: true }
-          }
+        if (data) {
+          const messagesWithRoles = await Promise.all(data.map(async (message) => {
+            if (project && message.user_id === project.user_id) {
+              return { ...message, is_client: true, profiles: message.profiles[0] }
+            }
 
-          // Check if the message sender is a team member
-          const { data: teamMember } = await supabase
-            .from('team_members')
-            .select(`
-              roles (
-                name
-              )
-            `)
-            .eq('user_id', message.user_id)
-            .eq('status', 'active')
-            .single()
-
-          return { ...message, role: teamMember?.roles }
-        }))
-
-        setMessages(messagesWithRoles)
-        scrollToBottom()
-      }
-      setIsLoading(false)
-    }
-
-    const initialize = async () => {
-      const cleanup = await initializeChat(roomId)
-      const unsubscribe = subscribeToMessages(async (message) => {
-        if (message.room_id === roomId) {
-          // Fetch the complete message with profile info
-          const { data: fullMessage } = await supabase
-            .from('chat_messages')
-            .select(`
-              id,
-              content,
-              type,
-              metadata,
-              created_at,
-              user_id,
-              profiles!chat_messages_user_id_fkey1 (
-                full_name
-              )
-            `)
-            .eq('id', message.id)
-            .single()
-
-          if (fullMessage) {
-            // Get the user's role if they're a team member
             const { data: teamMember } = await supabase
               .from('team_members')
-              .select(`
-                roles (
-                  name
-                )
-              `)
-              .eq('user_id', fullMessage.user_id)
+              .select('roles(name)')
+              .eq('user_id', message.user_id)
               .eq('status', 'active')
               .single()
 
-            // Check if the user is the project owner
-            const { data: project } = await supabase
-              .from('projects')
-              .select('user_id')
-              .eq('id', projectId)
+            return { ...message, role: teamMember?.roles[0], profiles: message.profiles[0] }
+          }))
+
+          setMessages(messagesWithRoles)
+          scrollToBottom()
+        }
+        setIsLoading(false)
+      } catch (error) {
+        console.error('Error fetching messages:', error)
+        setIsLoading(false)
+      }
+    }
+
+    const initialize = async () => {
+      try {
+        const cleanup = await initializeChat(roomId)
+        const unsubscribe = subscribeToMessages(async (message) => {
+          if (message.room_id === roomId) {
+            const { data: fullMessage } = await supabase
+              .from('chat_messages')
+              .select(`
+                id,
+                content,
+                type,
+                metadata,
+                created_at,
+                user_id,
+                profiles!chat_messages_user_id_fkey1 (
+                  full_name
+                )
+              `)
+              .eq('id', message.id)
               .single()
 
-            const messageWithRole = {
-              ...fullMessage,
-              role: teamMember?.roles,
-              is_client: project?.user_id === fullMessage.user_id
+            if (fullMessage) {
+              const { data: teamMember } = await supabase
+                .from('team_members')
+                .select('roles(name)')
+                .eq('user_id', fullMessage.user_id)
+                .eq('status', 'active')
+                .single()
+
+              const { data: project } = await supabase
+                .from('projects')
+                .select('user_id')
+                .eq('id', projectId)
+                .single()
+
+              const messageWithRole = {
+                ...fullMessage,
+                role: teamMember?.roles[0],
+                is_client: project?.user_id === fullMessage.user_id,
+                profiles: fullMessage.profiles[0]
+              }
+
+              setMessages(prev => [...prev, messageWithRole as Message])
+              scrollToBottom()
             }
-
-            setMessages(prev => [...prev, messageWithRole])
-            scrollToBottom()
           }
+        })
+
+        fetchMessages()
+
+        return () => {
+          cleanup?.()
+          unsubscribe()
         }
-      })
-
-      fetchMessages()
-
-      return () => {
-        cleanup?.()
-        unsubscribe()
+      } catch (error) {
+        console.error('Error initializing chat:', error)
       }
     }
 
