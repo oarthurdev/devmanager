@@ -74,6 +74,8 @@ export function ChatWindow({ projectId, roomId }: ChatWindowProps) {
 
       setCurrentUser(user);
 
+      console.log(currentUser);
+      
       const cleanup = await initializeChat(roomId)
       const unsubscribe = subscribeToMessages((message) => {
         if (message.room_id === roomId) {
