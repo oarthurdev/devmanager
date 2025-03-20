@@ -67,6 +67,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
+     // Generate invite link
+     const inviteLink = `${process.env.NEXT_PUBLIC_APP_URL}/convite?token=${userId}`;
+
+     // Send invitation email
+     const emailSent = await sendTeamInvitation({
+       email,
+       teamName: team.name,
+       roleName: role.name,
+       inviteLink
+     });
+
+     if (!emailSent) {
+       return NextResponse.json(
+         { error: 'Failed to send invitation email' },
+         { status: 500 }
+       );
+     }
+     
     // Create team member record
     const { error: memberError } = await supabase
       .from('team_members')
@@ -81,17 +99,6 @@ export async function POST(request: NextRequest) {
     if (memberError) {
       throw memberError;
     }
-
-    // Generate invite link
-    const inviteLink = `${process.env.NEXT_PUBLIC_APP_URL}/convite?token=${userId}`;
-
-    // Send invitation email
-    await sendTeamInvitation({
-      email,
-      teamName: team.name,
-      roleName: role.name,
-      inviteLink
-    });
 
     return NextResponse.json({
       message: 'Invitation sent successfully'

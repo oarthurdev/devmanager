@@ -36,8 +36,9 @@ export async function sendTeamInvitation({
 
   try {
     await transporter.sendMail(mailOptions)
+    return true
   } catch (error) {
     console.error('Error sending email:', error)
-    throw error
+    return false
   }
 }
