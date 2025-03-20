@@ -4,19 +4,19 @@ import { cookies } from 'next/headers';
 
 export const createClient = () => {
   if (typeof window === 'undefined') {
-    // If in a serverless function, create a client without cookies
+    // No lado do servidor (Serverless), use a chave de service_role para funções administrativas
     return createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Use the public anon key for client-side
+      process.env.SUPABASE_SERVICE_ROLE_KEY! // Use a chave de service_role no servidor
     );
   }
 
-  // Se estiver rodando no SSR, usa cookies
+  // No lado do cliente, use a chave anon para o acesso público
   const cookieStore = cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!, // Chave de service_role usada no servidor para permissões administrativas
     {
       cookies: {
         get(name: string) {

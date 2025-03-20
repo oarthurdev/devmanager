@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUser } from '@/lib/auth_utils';
 import { sendTeamInvitation } from '@/lib/email';
 import { v4 as uuidv4 } from 'uuid';
+import { createServerClient } from '@supabase/ssr';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,9 +52,14 @@ export async function POST(request: NextRequest) {
     let userId = existingUser?.id;
 
     // If user doesn't exist, create a temporary invite record
+    const supabaseAdmin = createServerClient(
+      process.env.SUPABASE_URL, // URL do seu projeto Supabase
+      process.env.SUPABASE_SERVICE_ROLE_KEY // A chave de service_role (não a chave anon)
+    );
+    
     if (!userId) {
       userId = uuidv4();
-      const { error: inviteError } = await supabase.auth.admin.createUser({
+      const { error: inviteError } = await supabaseAdmin.auth.admin.createUser({
         email,
         email_confirm: true,
         user_metadata: {
@@ -61,7 +67,7 @@ export async function POST(request: NextRequest) {
           invited_role: roleId
         }
       });
-
+    
       if (inviteError) {
         throw inviteError;
       }
