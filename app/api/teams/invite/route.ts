@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       userId = uuidv4();
       const { error: inviteError } = await supabaseAdmin.auth.admin.createUser({
+        id: userId,
         email,
         email_confirm: true,
         user_metadata: {
