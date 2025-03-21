@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, CheckCircle2, Clock, XCircle, Trash2, Plus } from "lucide-react";
+import { createActivity } from "@/lib/activityUtils";
 
 interface Task {
   id: string;
@@ -100,6 +101,8 @@ const ProjectTasks: React.FC<TasksListProps> = ({ projectId, canEdit }) => {
       console.error("Erro ao adicionar tarefa:", error);
       return;
     }
+
+    await createActivity("task_create", `Tarefa "${newTask.title}" criada`, projectId, { task: newTask.title });
 
     setTasks((prev) => [...prev, data]);
     setNewTask({ title: "", description: "", priority: "medium", deadline: "" });

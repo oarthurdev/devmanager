@@ -15,6 +15,7 @@ import { ChatWindow } from "@/components/chat/chat-window"
 import { UserPresenceList } from "@/components/chat/user-presence"
 import { ProjectTimeline } from "@/components/project/timeline"
 import { createNotification } from "@/lib/notifications"
+import { createActivity } from "@/lib/activityUtils"
 
 export default function ProjectDetailsPage() {
   const params = useParams()
@@ -171,6 +172,8 @@ export default function ProjectDetailsPage() {
 
       setProject(prev => ({ ...prev, status: newStatus }))
 
+      await createActivity("status_change", `Status do projeto alterado para: ${newStatus}`, project.id, null);
+      
       const { error: commentError } = await supabase
         .from("project_comments")
         .insert({
@@ -229,6 +232,9 @@ export default function ProjectDetailsPage() {
       if (error) throw error
 
       setComments(prev => [comment, ...prev])
+
+      const description = `Comentário: ${comment.trim()}`;
+      await createActivity("comment", description, project.id, null);
 
       // Notify relevant users
       if (isAdmin && project.user_id !== currentUserId) {

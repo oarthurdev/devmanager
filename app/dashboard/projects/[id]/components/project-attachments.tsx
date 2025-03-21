@@ -7,6 +7,7 @@ import Dropzone, { FileWithPath } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { createActivity } from "@/lib/activityUtils";
 
 interface Attachment {
   name: string;
@@ -90,6 +91,8 @@ const ProjectAttachments: React.FC<AttachmentsListProps> = ({ projectId, canEdit
       const cleanSignedUrl = cleanUrl(signedUrlData?.signedUrl)
 
       setAttachments((prev) => [...prev, { name: uniqueFileName, path: filePath, url: cleanSignedUrl }])
+
+      await createActivity("file_upload", `Arquivo ${uniqueFileName} enviado`, projectId, { file: uniqueFileName });
     }
 
     setUploading(false);
@@ -97,6 +100,9 @@ const ProjectAttachments: React.FC<AttachmentsListProps> = ({ projectId, canEdit
 
   const deleteFile = async (filePath: string) => {
     await supabase.storage.from("attachments").remove([filePath]);
+
+    await createActivity("file_delete", `Arquivo ${filePath} deletado`, projectId, { file: filePath });
+    
     setAttachments((prev) => prev.filter((file) => file.path !== filePath));
   };
 
