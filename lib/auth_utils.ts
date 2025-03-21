@@ -1,33 +1,21 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from './supabase/server';
 import { cookies } from 'next/headers';
 
 export const supabase = createClient();
 
-export async function getAuthenticatedUser(request: NextRequest) {
+export async function getAuthenticatedUser() {
   try {
     const cookieStore = cookies();
     const supabaseClient = createClient();
 
-    // Get session from cookie
+    // Pega a sessão do cookie
     const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
 
     if (sessionError || !session) {
       return { user: null, error: 'Unauthorized' };
     }
 
-    // Verify token from Authorization header if present
-    const authHeader = request.headers.get('authorization');
-    if (authHeader) {
-      const token = authHeader.split(' ')[1];
-      const { data: { user: tokenUser }, error: tokenError } = await supabaseClient.auth.getUser(token);
-
-      if (tokenError || !tokenUser || tokenUser.id !== session.user.id) {
-        return { user: null, error: 'Invalid token' };
-      }
-    }
-
-    // Get user profile with role information
+    // Obtém o perfil do usuário com informações de roles
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
       .select('*, roles(*)')
@@ -38,6 +26,7 @@ export async function getAuthenticatedUser(request: NextRequest) {
       return { user: null, error: 'Profile not found' };
     }
 
+    // Retorna o usuário com seu perfil
     return { 
       user: {
         ...session.user,
@@ -51,49 +40,39 @@ export async function getAuthenticatedUser(request: NextRequest) {
   }
 }
 
-export async function requireAuth(request: NextRequest) {
-  const { user, error } = await getAuthenticatedUser(request);
+// Função para verificar se o usuário está autenticado
+export async function requireAuth() {
+  const { user, error } = await getAuthenticatedUser();
   
   if (error || !user) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    );
+    throw new Error('Unauthorized');
   }
   
   return user;
 }
 
-export async function requireAdmin(request: NextRequest) {
-  const { user, error } = await getAuthenticatedUser(request);
+// Função para verificar se o usuário tem permissão de admin
+export async function requireAdmin() {
+  const { user, error } = await getAuthenticatedUser();
   
   if (error || !user || !user.profile?.is_admin) {
-    return NextResponse.json(
-      { error: 'Unauthorized - Admin access required' },
-      { status: 403 }
-    );
+    throw new Error('Unauthorized - Admin access required');
   }
   
   return user;
 }
 
-export function validateRequestMethod(request: NextRequest, allowedMethods: string[]) {
-  if (!allowedMethods.includes(request.method)) {
-    return NextResponse.json(
-      { error: `Method ${request.method} not allowed` },
-      { status: 405 }
-    );
+// Função para validar o método da requisição
+export function validateRequestMethod(allowedMethods: string[], method: string) {
+  if (!allowedMethods.includes(method)) {
+    throw new Error(`Method ${method} not allowed`);
   }
-  return null;
 }
 
+// Função para validar os campos obrigatórios
 export function validateRequiredFields(body: any, requiredFields: string[]) {
   const missingFields = requiredFields.filter(field => !body[field]);
   if (missingFields.length > 0) {
-    return NextResponse.json(
-      { error: `Missing required fields: ${missingFields.join(', ')}` },
-      { status: 400 }
-    );
+    throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
   }
-  return null;
 }

@@ -11,6 +11,7 @@ import {
     Download,
     FileX
   } from "lucide-react"
+import { getAuthenticatedUser } from './auth_utils';
 
 interface ActivityMetadata {
   [key: string]: any;
@@ -24,6 +25,15 @@ export const createActivity = async (
 ) => {
   const supabase = createClient();
 
+  const { user, error } = await getAuthenticatedUser();
+
+  if (error || !user) {
+      console.error('User not authenticated:', error);
+      throw new Error('User not authenticated');
+  }
+
+  const userId = user.id;
+
   try {
     const { data, error } = await supabase
       .from('project_activities')
@@ -32,6 +42,7 @@ export const createActivity = async (
           type,
           description,
           project_id: projectId,
+          user_id: userId,
           metadata
         }
       ]);

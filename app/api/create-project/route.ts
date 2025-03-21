@@ -9,19 +9,19 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     // Validate request method
-    const methodError = validateRequestMethod(request, ['POST']);
-    if (methodError) return methodError;
+
+    validateRequestMethod(['POST'], request.method);
 
     // Require authentication
-    const user = await requireAuth(request);
+    const user = await requireAuth();
     if ('status' in user) return user;
 
     const body = await request.json();
     
     // Validate required fields
     const requiredFields = ['plan', 'products', 'formData', 'customizations'];
-    const fieldsError = validateRequiredFields(body, requiredFields);
-    if (fieldsError) return fieldsError;
+    
+    validateRequiredFields(body, requiredFields);
 
     const { plan, products, formData, customizations } = body;
 
