@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { v4 as uuidv4 } from 'uuid';
+import { requireAuth, validateRequestMethod, validateRequiredFields } from '@/lib/auth_utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,23 +16,33 @@ const client = new MercadoPagoConfig({
 
 const payment = new Payment(client);
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { plan, products, formData, project_id } = body;
+    // Validate request method
+    const methodError = validateRequestMethod(request, ['POST']);
+    if (methodError) return methodError;
 
-    if (!project_id) {
-      throw new Error("Project ID is required to create a payment");
-    }
+    // Require authentication
+    const user = await requireAuth(request);
+    if ('status' in user) return user;
+
+    const body = await request.json();
+    
+    // Validate required fields
+    const requiredFields = ['plan', 'products', 'formData', 'project_id'];
+    const fieldsError = validateRequiredFields(body, requiredFields);
+    if (fieldsError) return fieldsError;
+
+    const { plan, products, formData, project_id } = body;
     
     const planPrices = {
-      'Básico': 2, // R$ 4.997,00
-      'Profissional': 999700, // R$ 9.997,00
-      'Enterprise': 1999700 // R$ 19.997,00
+      'Básico': 499700,
+      'Profissional': 999700,
+      'Enterprise': 1999700
     };
 
-    const amount = planPrices[plan as keyof typeof planPrices] / 100; // Convertendo para decimal
-    const externalReference = uuidv4(); // Usando UUID para referência única
+    const amount = planPrices[plan as keyof typeof planPrices] / 100;
+    const externalReference = uuidv4();
 
     const paymentData = {
       transaction_amount: amount,
@@ -42,7 +54,7 @@ export async function POST(request: Request) {
         last_name: formData.name.split(' ')[1] || '',
         identification: {
           type: 'CPF',
-          number: formData.cpf || '09932960926' // Substituindo pelo CPF real se disponível
+          number: formData.cpf || user.profile?.document
         }
       },
       notification_url: `${process.env.PRODUCTION_URL}/api/webhooks/mercadopago`,
@@ -53,7 +65,8 @@ export async function POST(request: Request) {
         customer_name: formData.name,
         customer_email: formData.email,
         customer_phone: formData.phone,
-        project_id: project_id
+        project_id: project_id,
+        user_id: user.id
       }
     };
 
@@ -63,7 +76,6 @@ export async function POST(request: Request) {
 
     const response = await payment.create({ body: paymentData, requestOptions });
 
-    console.log(response.id)
     if (!response.point_of_interaction?.transaction_data?.qr_code) {
       throw new Error('PIX data not found in payment response');
     }
@@ -72,16 +84,15 @@ export async function POST(request: Request) {
       qr_code: response.point_of_interaction.transaction_data.qr_code,
       qr_code_base64: response.point_of_interaction.transaction_data.qr_code_base64,
       payment_id: response.id,
-      expiration_date: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutos
-      amount: planPrices[plan as keyof typeof planPrices], // Mantendo em centavos
+      expiration_date: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      amount: planPrices[plan as keyof typeof planPrices],
       project_id
     });
   } catch (error) {
-      let errorMessage = 'Error creating payment';
-    
-      if (typeof error === 'object' && error !== null && 'message' in error) {
-        errorMessage = String(error.message);
-      }
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
-    }
+    console.error('Payment error:', error);
+    return NextResponse.json(
+      { error: 'Failed to create payment' },
+      { status: 500 }
+    );
+  }
 }

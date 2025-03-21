@@ -1,26 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/auth_utils';
-import { createNotification } from '@/lib/notifications';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { requireAuth, validateRequestMethod, validateRequiredFields } from '@/lib/auth_utils';
 import { createClient } from '@/lib/supabase/server';
+import { createNotification } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient();
-
 export async function POST(request: NextRequest) {
   try {
+    // Validate request method
+    const methodError = validateRequestMethod(request, ['POST']);
+    if (methodError) return methodError;
+
+    // Require authentication
+    const user = await requireAuth(request);
+    if ('status' in user) return user;
+
     const body = await request.json();
+    
+    // Validate required fields
+    const requiredFields = ['plan', 'products', 'formData', 'customizations'];
+    const fieldsError = validateRequiredFields(body, requiredFields);
+    if (fieldsError) return fieldsError;
+
     const { plan, products, formData, customizations } = body;
-
-    // Get the authenticated user
-    const { user, error } = await getAuthenticatedUser(request);
-
-    if (error || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
 
     // Calculate deadline based on plan
     const deadlineDays = {
@@ -31,6 +34,8 @@ export async function POST(request: NextRequest) {
     
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + deadlineDays[plan as keyof typeof deadlineDays]);
+
+    const supabase = createClient();
 
     // Create project
     const { data: project, error: projectError } = await supabase
@@ -91,7 +96,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    return NextResponse.json({project_id: project.id});
+    return NextResponse.json({ project_id: project.id });
   } catch (error) {
     console.error('Error creating project:', error);
     return NextResponse.json(

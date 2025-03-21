@@ -1,32 +1,31 @@
 import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { createNotification } from '@/lib/notifications';
+import { validateRequestMethod } from '@/lib/auth_utils';
 
 export const dynamic = 'force-dynamic';
 
 const supabase = createClient();
 
-// Configuração do cliente do Mercado Pago
 const client = new MercadoPagoConfig({
   accessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN as string,
 });
 
 const payment = new Payment(client);
 
-// Função para registrar logs no banco de dados
-async function logToDatabase(level, message, metadata = {}) {
+async function logToDatabase(level: string, message: string, metadata = {}) {
   const { error } = await supabase
     .from('logs')
     .insert([{ level, message, metadata }]);
 
   if (error) {
-    console.error('Erro ao salvar log no banco:', error);
+    console.error('Error saving log:', error);
   }
 }
 
-// Habilitar CORS para o webhook
-export async function OPTIONS() {
+export async function OPTIONS(request: NextRequest) {
   return NextResponse.json({}, {
     status: 200,
     headers: {
@@ -37,44 +36,74 @@ export async function OPTIONS() {
   });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    // Validate request method
+    const methodError = validateRequestMethod(request, ['POST']);
+    if (methodError) return methodError;
+
     const body = await request.json();
 
+    // Validate webhook signature
+    const signature = request.headers.get('x-signature');
+    if (!signature) {
+      await logToDatabase('error', 'Missing webhook signature');
+      return NextResponse.json(
+        { error: 'Missing signature' },
+        { status: 401 }
+      );
+    }
 
-    if (body.action == 'payment.updated') {
-      await logToDatabase('info', 'Webhook válido recebido', { type: body.type, paymentId: body.data.id });
+    // Verify webhook source IP
+    const clientIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip');
+    const allowedIps = process.env.MERCADO_PAGO_WEBHOOK_IPS?.split(',') || [];
+    if (!allowedIps.includes(clientIp || '')) {
+      await logToDatabase('error', 'Invalid webhook source IP', { ip: clientIp });
+      return NextResponse.json(
+        { error: 'Invalid source' },
+        { status: 403 }
+      );
+    }
+
+    if (body.action === 'payment.updated') {
+      await logToDatabase('info', 'Valid webhook received', { type: body.type, paymentId: body.data.id });
 
       processPayment(body.data.id).catch(async (error) => {
-        await logToDatabase('error', 'Erro no processamento assíncrono do pagamento', { error: error.message });
+        await logToDatabase('error', 'Error in async payment processing', { error: error.message });
       });
     }
-    await logToDatabase('info', 'Webhook processado com sucesso');
+
+    await logToDatabase('info', 'Webhook processed successfully');
     
     return NextResponse.json({ status: 'processing' });
   } catch (error) {
-    await logToDatabase('error', 'Erro no webhook', { error: error.message });
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    await logToDatabase('error', 'Webhook error', { error: error.message });
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
 
-async function processPayment(paymentId) {
+async function processPayment(paymentId: string) {
   try {
     const paymentData = await payment.get({ id: paymentId });
 
-    await logToDatabase('info', 'Pagamento processado', { paymentId: paymentData.id, status: paymentData.status, metadata: paymentData.metadata });
+    await logToDatabase('info', 'Payment processed', { 
+      paymentId: paymentData.id,
+      status: paymentData.status,
+      metadata: paymentData.metadata
+    });
 
     if (!paymentData || !paymentData.metadata?.project_id) {
-      await logToDatabase('error', 'Dados do pagamento incompletos ou inválidos');
-      throw new Error('Dados do pagamento incompletos ou inválidos');
+      await logToDatabase('error', 'Invalid payment data');
+      throw new Error('Invalid payment data');
     }
-
-    console.log(paymentData);
 
     const projectStatus = getProjectStatus(paymentData.status);
     const notificationInfo = getNotificationInfo(paymentData.status);
 
-    await logToDatabase('info', 'Atualizando status do projeto', { projectStatus });
+    await logToDatabase('info', 'Updating project status', { projectStatus });
 
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -144,12 +173,12 @@ async function processPayment(paymentId) {
       }
     }
   } catch (error) {
-    await logToDatabase('error', 'Erro no processamento do pagamento', { error: error.message });
+    await logToDatabase('error', 'Payment processing error', { error: error.message });
     throw error;
   }
 }
 
-function getProjectStatus(paymentStatus) {
+function getProjectStatus(paymentStatus: string) {
   const statusMap = {
     approved: 'in_progress',
     pending: 'pending',
@@ -159,10 +188,10 @@ function getProjectStatus(paymentStatus) {
     refunded: 'cancelled',
     charged_back: 'cancelled'
   };
-  return statusMap[paymentStatus] || 'pending';
+  return statusMap[paymentStatus as keyof typeof statusMap] || 'pending';
 }
 
-function getNotificationInfo(paymentStatus) {
+function getNotificationInfo(paymentStatus: string) {
   const notifications = {
     approved: { type: 'payment_success', title: 'Pagamento Aprovado', message: 'Seu pagamento foi aprovado.' },
     pending: { type: 'payment_pending', title: 'Pagamento Pendente', message: 'Aguardando confirmação do pagamento.' },
@@ -172,7 +201,7 @@ function getNotificationInfo(paymentStatus) {
     refunded: { type: 'payment_failed', title: 'Pagamento Reembolsado', message: 'Seu pagamento foi reembolsado.' },
     charged_back: { type: 'payment_failed', title: 'Pagamento Contestado', message: 'Seu pagamento foi contestado.' }
   };
-  return notifications[paymentStatus];
+  return notifications[paymentStatus as keyof typeof notifications];
 }
 
 async function createInitialTasks(supabase: any, project: any) {
@@ -183,7 +212,7 @@ async function createInitialTasks(supabase: any, project: any) {
       status: 'pending',
       project_id: project.id,
       priority: 'high',
-      deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 dias
+      deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       estimated_hours: 20
     },
     {
@@ -192,7 +221,7 @@ async function createInitialTasks(supabase: any, project: any) {
       status: 'pending',
       project_id: project.id,
       priority: 'high',
-      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 dias
+      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       estimated_hours: 30
     },
     {
@@ -201,7 +230,7 @@ async function createInitialTasks(supabase: any, project: any) {
       status: 'pending',
       project_id: project.id,
       priority: 'high',
-      deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 dias
+      deadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       estimated_hours: 80
     },
     {
@@ -210,7 +239,7 @@ async function createInitialTasks(supabase: any, project: any) {
       status: 'pending',
       project_id: project.id,
       priority: 'medium',
-      deadline: new Date(Date.now() + 37 * 24 * 60 * 60 * 1000).toISOString(), // 37 dias
+      deadline: new Date(Date.now() + 37 * 24 * 60 * 60 * 1000).toISOString(),
       estimated_hours: 20
     },
     {
@@ -219,16 +248,14 @@ async function createInitialTasks(supabase: any, project: any) {
       status: 'pending',
       project_id: project.id,
       priority: 'medium',
-      deadline: new Date(Date.now() + 40 * 24 * 60 * 60 * 1000).toISOString(), // 40 dias
+      deadline: new Date(Date.now() + 40 * 24 * 60 * 60 * 1000).toISOString(),
       estimated_hours: 10
     }
   ];
 
-  // Create tasks
   const { error: tasksError } = await supabase.from('tasks').insert(tasks);
   if (tasksError) throw tasksError;
 
-  // Notify about tasks creation
   await createNotification({
     userId: project.user_id,
     type: 'tasks_created',
