@@ -80,3 +80,82 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Timeline Styles */
+.timeline-milestone {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  border-radius: 50%;
+}
+
+.timeline-deadline {
+  color: hsl(var(--destructive));
+  background-color: hsl(var(--destructive));
+  border-color: hsl(var(--destructive));
+  border-radius: 50%;
+}
+
+.timeline-task {
+  border-radius: 4px;
+  padding: 4px;
+}
+
+.timeline-task-pending {
+  background-color: hsl(var(--muted));
+  border-color: hsl(var(--muted-foreground));
+}
+
+.timeline-task-in_progress {
+  background-color: hsl(var(--primary) / 0.2);
+  border-color: hsl(var(--primary));
+}
+
+.timeline-task-completed {
+  background-color: hsl(142.1 76.2% 36.3% / 0.2);
+  border-color: hsl(142.1 76.2% 36.3%);
+}
+
+.timeline-activity {
+  border-radius: 50%;
+  width: 24px !important;
+  height: 24px !important;
+}
+
+.timeline-activity-comment {
+  background-color: hsl(var(--primary) / 0.2);
+  border-color: hsl(var(--primary));
+}
+
+.timeline-activity-status_change {
+  background-color: hsl(var(--accent) / 0.2);
+  border-color: hsl(var(--accent));
+}
+
+.timeline-activity-file_upload {
+  background-color: hsl(var(--secondary) / 0.2);
+  border-color: hsl(var(--secondary));
+}
+
+.vis-timeline {
+  border: none !important;
+  font-family: inherit !important;
+}
+
+.vis-item {
+  @apply shadow-sm transition-shadow hover:shadow-md;
+}
+
+.vis-item.vis-selected {
+  @apply ring-2 ring-primary ring-offset-2;
+}
+
+.vis-time-axis .vis-text {
+  @apply text-muted-foreground;
+}
+
+.vis-panel.vis-center,
+.vis-panel.vis-left,
+.vis-panel.vis-right {
+  border-color: hsl(var(--border)) !important;
+}

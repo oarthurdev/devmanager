@@ -13,7 +13,7 @@ import ProjectAttachments from "./components/project-attachments"
 import ProjectTasks from "./components/project-tasks"
 import { ChatWindow } from "@/components/chat/chat-window"
 import { UserPresenceList } from "@/components/chat/user-presence"
-import { ActivityTimeline } from "@/components/project/activity-timeline"
+import { ProjectTimeline } from "@/components/project/timeline"
 import { createNotification } from "@/lib/notifications"
 
 export default function ProjectDetailsPage() {
@@ -323,11 +323,12 @@ export default function ProjectDetailsPage() {
           <Tabs defaultValue="overview">
             <TabsList>
               <TabsTrigger value="overview">Visão Geral</TabsTrigger>
+              <TabsTrigger value="timeline">Linha do Tempo</TabsTrigger>
               <TabsTrigger value="tasks">Tarefas</TabsTrigger>
               <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="comments">Comentários</TabsTrigger>
               <TabsTrigger value="attachments">Anexos</TabsTrigger>
-              <TabsTrigger value="timeline">Timeline</TabsTrigger>
+              <TabsTrigger value="activity">Atividades</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
@@ -344,6 +345,10 @@ export default function ProjectDetailsPage() {
                   </div>
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="timeline">
+              <ProjectTimeline projectId={project.id} />
             </TabsContent>
 
             <TabsContent value="tasks">
@@ -375,8 +380,8 @@ export default function ProjectDetailsPage() {
               <ProjectAttachments projectId={project.id} canEdit={canEdit} />
             </TabsContent>
 
-            <TabsContent value="timeline">
-              <ActivityTimeline projectId={project.id} />
+            <TabsContent value="activity">
+              <ProjectTimeline projectId={project.id} />
             </TabsContent>
           </Tabs>
         </Card>
