@@ -65,6 +65,7 @@
     "framer-motion": "^11.0.14",
     "giphy-api": "^2.0.2",
     "input-otp": "^1.2.4",
+    "js-cookie": "^3.0.5",
     "linkify-react": "^4.2.0",
     "linkifyjs": "^4.2.0",
     "lucide-react": "^0.446.0",

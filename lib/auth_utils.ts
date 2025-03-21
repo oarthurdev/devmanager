@@ -1,21 +1,28 @@
-import { createClient } from './supabase/server';
-import { cookies } from 'next/headers';
+import { createClient } from './supabase/client';
+import Cookies from 'js-cookie'; // Importando js-cookie
 
 export const supabase = createClient();
 
 export async function getAuthenticatedUser() {
   try {
-    const cookieStore = cookies();
-    const supabaseClient = createClient();
+    // Acessando o cookie diretamente no cliente
+    const sessionCookie = Cookies.get('sb:session'); // Nome do cookie que o Supabase usa para armazenar a sessão
 
-    // Pega a sessão do cookie
-    const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+    if (!sessionCookie) {
+      return { user: null, error: 'Unauthorized' };
+    }
+
+    const supabaseClient = createClient();
+    const { data: { session }, error: sessionError } = await supabaseClient.auth.setSession({
+      access_token: sessionCookie,
+      refresh_token: ''
+    });
 
     if (sessionError || !session) {
       return { user: null, error: 'Unauthorized' };
     }
 
-    // Obtém o perfil do usuário com informações de roles
+    // Obtendo o perfil do usuário
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
       .select('*, roles(*)')
@@ -26,7 +33,6 @@ export async function getAuthenticatedUser() {
       return { user: null, error: 'Profile not found' };
     }
 
-    // Retorna o usuário com seu perfil
     return { 
       user: {
         ...session.user,
