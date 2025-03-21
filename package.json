@@ -70,6 +70,7 @@
     "lucide-react": "^0.446.0",
     "marked": "^12.0.1",
     "mercadopago": "^2.2.0",
+    "moment": "^2.30.1",
     "next": "13.5.1",
     "next-themes": "^0.3.0",
     "nodemailer": "^6.9.12",
@@ -94,6 +95,7 @@
     "utf-8-validate": "^6.0.5",
     "uuid": "^11.1.0",
     "vaul": "^0.9.9",
+    "vis-data": "^7.1.9",
     "vis-timeline": "^7.7.3",
     "web-push": "^3.6.7",
     "zod": "^3.23.8"
