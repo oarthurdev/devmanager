@@ -328,7 +328,6 @@ export default function ProjectDetailsPage() {
               <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="comments">Comentários</TabsTrigger>
               <TabsTrigger value="attachments">Anexos</TabsTrigger>
-              <TabsTrigger value="activity">Atividades</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6">
@@ -378,10 +377,6 @@ export default function ProjectDetailsPage() {
 
             <TabsContent value="attachments">
               <ProjectAttachments projectId={project.id} canEdit={canEdit} />
-            </TabsContent>
-
-            <TabsContent value="activity">
-              <ProjectTimeline projectId={project.id} />
             </TabsContent>
           </Tabs>
         </Card>
