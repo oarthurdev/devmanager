@@ -39,6 +39,8 @@ export async function getAuthenticatedUser() {
       refresh_token: '' // você pode tentar usar sessionData.refresh_token aqui se necessário
     });
 
+    console.log(session, sessionError);
+
     if (sessionError || !session) {
       return { user: null, error: 'Unauthorized' };
     }
