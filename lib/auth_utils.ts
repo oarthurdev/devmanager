@@ -1,28 +1,48 @@
 import { createClient } from './supabase/client';
-import Cookies from 'js-cookie'; // Importando js-cookie
+import Cookies from 'js-cookie';
 
 export const supabase = createClient();
 
 export async function getAuthenticatedUser() {
   try {
-    // Acessando o cookie diretamente no cliente
-    const sessionCookie = Cookies.get('sb:session'); // Nome do cookie que o Supabase usa para armazenar a sessão
+    // Encontrar o nome do cookie da sessão do Supabase dinamicamente
+    const sessionCookieName = Object.keys(Cookies.get()).find(name =>
+      name.startsWith('sb-') && name.endsWith('-auth-token')
+    );
 
-    if (!sessionCookie) {
+    console.log('Session cookie name:', sessionCookieName);
+
+
+    if (!sessionCookieName) {
+      return { user: null, error: 'Unauthorized' };
+    }
+
+    const rawSession = Cookies.get(sessionCookieName);
+
+    if (!rawSession) {
+      return { user: null, error: 'Unauthorized' };
+    }
+
+    // Decodifica o JSON armazenado como string no cookie
+    const sessionData = JSON.parse(decodeURIComponent(rawSession));
+
+    const access_token = sessionData?.access_token;
+
+    console.log('Access token:', access_token);
+    if (!access_token) {
       return { user: null, error: 'Unauthorized' };
     }
 
     const supabaseClient = createClient();
     const { data: { session }, error: sessionError } = await supabaseClient.auth.setSession({
-      access_token: sessionCookie,
-      refresh_token: ''
+      access_token,
+      refresh_token: '' // você pode tentar usar sessionData.refresh_token aqui se necessário
     });
 
     if (sessionError || !session) {
       return { user: null, error: 'Unauthorized' };
     }
 
-    // Obtendo o perfil do usuário
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
       .select('*, roles(*)')
@@ -33,13 +53,14 @@ export async function getAuthenticatedUser() {
       return { user: null, error: 'Profile not found' };
     }
 
-    return { 
+    return {
       user: {
         ...session.user,
         profile
-      }, 
-      error: null 
+      },
+      error: null
     };
+
   } catch (error) {
     console.error('Auth error:', error);
     return { user: null, error: 'Authentication error' };
