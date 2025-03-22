@@ -1,23 +1,15 @@
-"use client"
+'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Timeline } from 'vis-timeline'
+import { Timeline, DataItem, DataGroup, TimelineOptions } from 'vis-timeline'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import {
   Clock,
-  MessageSquare,
-  FileText,
-  CheckCircle2,
-  AlertCircle,
-  User,
   Shield,
-  Calendar,
-  Settings,
-  Upload,
-  Download
+  User,
 } from 'lucide-react'
 
 interface Activity {
@@ -41,6 +33,12 @@ interface Task {
   status: string
 }
 
+interface Project {
+  id: string
+  created_at: string
+  deadline: string
+}
+
 interface ProjectTimelineProps {
   projectId: string
 }
@@ -48,184 +46,143 @@ interface ProjectTimelineProps {
 export function ProjectTimeline({ projectId }: ProjectTimelineProps) {
   const timelineRef = useRef<HTMLDivElement>(null)
   const timelineInstance = useRef<Timeline | null>(null)
+
   const [activities, setActivities] = useState<Activity[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
+  const [project, setProject] = useState<Project | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+
   const supabase = createClient()
 
   useEffect(() => {
-    const fetchTimelineData = async () => {
+    const fetchData = async () => {
       try {
-        // Fetch project details
-        const { data: project } = await supabase
-          .from('projects')
-          .select('*')
-          .eq('id', projectId)
-          .single()
-
-        // Fetch tasks
-        const { data: tasks } = await supabase
-          .from('tasks')
-          .select('*')
-          .eq('project_id', projectId)
-          .order('deadline', { ascending: true })
-
-        // Fetch activities
-        const { data: activities } = await supabase
-          .from('project_activities')
-          .select(`
-            *,
-            profiles (
-              full_name,
-              is_admin
-            )
-          `)
-          .eq('project_id', projectId)
-          .order('created_at', { ascending: true })
+        const [{ data: project }, { data: tasks }, { data: activities }] = await Promise.all([
+          supabase.from('projects').select('*').eq('id', projectId).single(),
+          supabase.from('tasks').select('*').eq('project_id', projectId).order('deadline', { ascending: true }),
+          supabase
+            .from('project_activities')
+            .select(`
+              *,
+              profiles (
+                full_name,
+                is_admin
+              )
+            `)
+            .eq('project_id', projectId)
+            .order('created_at', { ascending: true }),
+        ])
 
         if (!project || !tasks || !activities) return
 
-        // Create timeline items
-        const items = [
-          // Project start
-          {
-            id: 'project_start',
-            content: 'Início do Projeto',
-            start: new Date(project.created_at),
-            type: 'point',
-            className: 'timeline-milestone',
-          },
-          // Project deadline
-          {
-            id: 'project_deadline',
-            content: 'Prazo Final',
-            start: new Date(project.deadline),
-            type: 'point',
-            className: 'timeline-deadline',
-          },
-          // Tasks
-          ...tasks.map((task) => ({
-            id: `task_${task.id}`,
-            content: task.title,
-            start: new Date(task.created_at),
-            end: new Date(task.deadline),
-            className: `timeline-task timeline-task-${task.status}`,
-            group: 1,
-          })),
-          // Activities
-          ...activities.map((activity) => ({
-            id: `activity_${activity.id}`,
-            content: activity.description,
-            start: new Date(activity.created_at),
-            type: 'point',
-            className: `timeline-activity timeline-activity-${activity.type}`,
-            group: 2,
-          })),
-        ]
-
-        // Create groups
-        const groups = [
-          { id: 1, content: 'Tarefas' },
-          { id: 2, content: 'Atividades' },
-        ]
-
-        // Configure timeline
-        const options = {
-          height: '400px',
-          min: new Date(project.created_at),
-          max: new Date(project.deadline),
-          zoomMin: 1000 * 60 * 60 * 24, // One day
-          zoomMax: 1000 * 60 * 60 * 24 * 365, // One year
-          orientation: 'top',
-          stack: true,
-          showCurrentTime: true,
-          format: {
-            minorLabels: {
-              minute: 'HH:mm',
-              hour: 'HH:mm',
-              day: 'D',
-              week: 'w',
-              month: 'MMM',
-              year: 'YYYY'
-            },
-            majorLabels: {
-              minute: 'DD/MM/YYYY',
-              hour: 'DD/MM/YYYY',
-              day: 'MMMM YYYY',
-              week: 'MMMM YYYY',
-              month: 'YYYY',
-              year: ''
-            }
-          }
-        }
-
-        // Initialize timeline
-        if (timelineRef.current && !timelineInstance.current) {
-          timelineInstance.current = new Timeline(
-            timelineRef.current,
-            items,
-            groups,
-            options
-          )
-
-          // Add click handler
-          timelineInstance.current.on('select', (properties) => {
-            const selectedId = properties.items[0]
-            if (selectedId) {
-              const item = items.find((i) => i.id === selectedId)
-              if (item) {
-                console.log('Selected item:', item)
-                // Here you could show a modal or tooltip with more details
-              }
-            }
-          })
-        }
+        setProject(project)
+        setTasks(tasks)
+        setActivities(activities)
+        initializeTimeline(project, tasks, activities)
       } catch (error) {
-        console.error('Error fetching timeline data:', error)
+        console.error('Erro ao buscar dados do projeto:', error)
+      } finally {
+        setIsLoading(false)
       }
     }
 
-    fetchTimelineData()
+    fetchData()
 
-    // Subscribe to new activities
-    const channel = supabase
+    // Supabase Realtime
+    const activityChannel = supabase
       .channel(`project_activities:${projectId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'project_activities',
-          filter: `project_id=eq.${projectId}`
-        },
-        (payload) => {
-          setActivities((current) => [payload.new as Activity, ...current])
-        }
-      )
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'project_activities',
+        filter: `project_id=eq.${projectId}`,
+      }, (payload) => {
+        setActivities((prev) => [payload.new as Activity, ...prev])
+      })
       .subscribe()
 
-    // Subscribe to new tasks
     const taskChannel = supabase
       .channel(`tasks:${projectId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'tasks',
-          filter: `project_id=eq.${projectId}`
-        },
-        (payload) => {
-          setTasks((current) => [payload.new as Task, ...current])
-        }
-      )
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'tasks',
+        filter: `project_id=eq.${projectId}`,
+      }, (payload) => {
+        setTasks((prev) => [payload.new as Task, ...prev])
+      })
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      supabase.removeChannel(activityChannel)
       supabase.removeChannel(taskChannel)
     }
-  }, [projectId, supabase])
+  }, [projectId])
+
+  const initializeTimeline = (
+    project: Project,
+    tasks: Task[],
+    activities: Activity[]
+  ) => {
+    if (!timelineRef.current || timelineInstance.current) return
+
+    const items: DataItem[] = [
+      {
+        id: 'start',
+        content: 'Início do Projeto',
+        start: new Date(project.created_at),
+        type: 'point',
+        className: 'timeline-milestone',
+      },
+      {
+        id: 'deadline',
+        content: 'Prazo Final',
+        start: new Date(project.deadline),
+        type: 'point',
+        className: 'timeline-deadline',
+      },
+      ...tasks.map((task) => ({
+        id: `task-${task.id}`,
+        content: task.title,
+        start: new Date(task.created_at),
+        end: new Date(task.deadline),
+        className: `timeline-task timeline-task-${task.status}`,
+        group: 1,
+      })),
+      ...activities.map((activity) => ({
+        id: `activity-${activity.id}`,
+        content: activity.description,
+        start: new Date(activity.created_at),
+        type: 'point',
+        className: `timeline-activity timeline-activity-${activity.type}`,
+        group: 2,
+      })),
+    ]
+
+    const groups: DataGroup[] = [
+      { id: 1, content: 'Tarefas' },
+      { id: 2, content: 'Atividades' },
+    ]
+
+    const options: TimelineOptions = {
+      height: '400px',
+      min: new Date(project.created_at),
+      max: new Date(project.deadline),
+      zoomMin: 1000 * 60 * 60 * 24,
+      zoomMax: 1000 * 60 * 60 * 24 * 365,
+      orientation: 'top',
+      stack: true,
+      showCurrentTime: true,
+    }
+
+    timelineInstance.current = new Timeline(timelineRef.current, items, groups, options)
+
+    timelineInstance.current.on('select', ({ items }) => {
+      const selectedId = items[0]
+      const item = items && selectedId && items.find((i) => i.id === selectedId)
+      if (item) console.log('Item selecionado:', item)
+    })
+  }
 
   if (isLoading) {
     return (
@@ -258,18 +215,14 @@ export function ProjectTimeline({ projectId }: ProjectTimelineProps) {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium">
-                    {activity.profiles.full_name}
-                  </span>
+                  <span className="font-medium">{activity.profiles.full_name}</span>
                   {activity.profiles.is_admin ? (
                     <span className="flex items-center gap-1 text-sm text-primary">
-                      <Shield className="w-3 h-3" />
-                      Admin
+                      <Shield className="w-3 h-3" /> Admin
                     </span>
                   ) : (
                     <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <User className="w-3 h-3" />
-                      Usuário
+                      <User className="w-3 h-3" /> Usuário
                     </span>
                   )}
                   <span className="text-sm text-muted-foreground">
