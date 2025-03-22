@@ -5,44 +5,47 @@ export const supabase = createClient();
 
 export async function getAuthenticatedUser() {
   try {
-    // Encontrar o nome do cookie da sessão do Supabase dinamicamente
     const sessionCookieName = Object.keys(Cookies.get()).find(name =>
       name.startsWith('sb-') && name.endsWith('-auth-token')
     );
 
-    console.log('Session cookie name:', sessionCookieName);
-
-
     if (!sessionCookieName) {
-      return { user: null, error: 'Unauthorized' };
+      return { user: null, error: 'Unauthorized - cookie not found' };
     }
 
     const rawSession = Cookies.get(sessionCookieName);
-
     if (!rawSession) {
-      return { user: null, error: 'Unauthorized' };
+      return { user: null, error: 'Unauthorized - no session data' };
     }
 
-    // Decodifica o JSON armazenado como string no cookie
-    const sessionData = JSON.parse(decodeURIComponent(rawSession));
-
-    const access_token = sessionData?.access_token;
-
-    console.log('Access token:', access_token);
-    if (!access_token) {
-      return { user: null, error: 'Unauthorized' };
+    let sessionData;
+    try {
+      sessionData = JSON.parse(decodeURIComponent(rawSession));
+    } catch (e) {
+      return { user: null, error: 'Invalid session format' };
     }
 
-    const supabaseClient = createClient();
-    const { data: { session }, error: sessionError } = await supabaseClient.auth.setSession({
+    const { access_token, refresh_token } = sessionData || {};
+
+    if (!access_token || !refresh_token) {
+      return { user: null, error: 'Unauthorized - missing tokens' };
+    }
+
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    const {
+      data: { session },
+      error: sessionError
+    } = await supabaseClient.auth.setSession({
       access_token,
-      refresh_token: '' // você pode tentar usar sessionData.refresh_token aqui se necessário
+      refresh_token,
     });
 
-    console.log(session, sessionError);
-
     if (sessionError || !session) {
-      return { user: null, error: 'Unauthorized' };
+      return { user: null, error: sessionError?.message || 'Session error' };
     }
 
     const { data: profile, error: profileError } = await supabaseClient
@@ -62,7 +65,6 @@ export async function getAuthenticatedUser() {
       },
       error: null
     };
-
   } catch (error) {
     console.error('Auth error:', error);
     return { user: null, error: 'Authentication error' };

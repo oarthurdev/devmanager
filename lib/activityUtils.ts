@@ -28,7 +28,6 @@ export const createActivity = async (
   const { user, error } = await getAuthenticatedUser();
 
   console.log('User:', user);
-  console.log('Error:', error);
   
   if (error || !user) {
       console.error('User not authenticated:', error);
