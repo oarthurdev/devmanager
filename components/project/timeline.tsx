@@ -59,7 +59,7 @@ export function ProjectTimeline({ projectId }: ProjectTimelineProps) {
       try {
         const [{ data: project }, { data: tasks }, { data: activities }] = await Promise.all([
           supabase.from('projects').select('*').eq('id', projectId).single(),
-          supabase.from('tasks').select('*').eq('project_id', projectId).order('deadline', { ascending: true }),
+          supabase.from('tasks').select('*').eq('project_id', projectId).order('deadline', { ascending: false }),
           supabase
             .from('project_activities')
             .select(`
@@ -70,7 +70,7 @@ export function ProjectTimeline({ projectId }: ProjectTimelineProps) {
               )
             `)
             .eq('project_id', projectId)
-            .order('created_at', { ascending: true }),
+            .order('created_at', { ascending: false }),
         ])
 
         if (!project || !tasks || !activities) return
