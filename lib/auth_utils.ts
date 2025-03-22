@@ -50,7 +50,7 @@ export async function getAuthenticatedUser() {
 
     const { data: profile, error: profileError } = await supabaseClient
       .from('profiles')
-      .select('*, roles(*)')
+      .select('*')
       .eq('id', session.user.id)
       .single();
 
